@@ -1,3 +1,5 @@
+
+%%writefile app.py
 import io
 import numpy as np
 import pandas as pd
@@ -66,7 +68,8 @@ def overlay_figure(contracts, curves: dict, y_label="Last Price ($)", title="WTI
     return fig
 
 # ---------------------------- Load Excel ----------------------------
-FILE_PATH = "/content/drive/MyDrive/Colab Notebooks/WTI_Outright.xlsx"
+FILE_PATH = "WTI_Outright.xlsx"  # <-- Use relative path (file must be in repo)
+
 try:
     df, contracts = load_wti(FILE_PATH)
 except Exception as e:

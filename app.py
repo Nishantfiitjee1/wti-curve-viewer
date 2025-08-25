@@ -45,8 +45,8 @@ div.stButton > button {
 # Define the single master Excel file.
 MASTER_EXCEL_FILE = "Futures_Data.xlsx"
 
-# **FIX**: Cleaned up the config to only include products present in the user's Excel file.
-# Ensured sheet names match the provided file information exactly.
+# **FIX**: Cleaned up the config to only include products present in your Excel file.
+# Ensured sheet names match your file information exactly.
 PRODUCT_CONFIG = {
     "CL": {"name": "WTI Crude Oil", "sheet": "WTI_Outright"},
     "BZ": {"name": "Brent Crude Oil", "sheet": "Brent_outright"},

@@ -43,15 +43,12 @@ div.stButton > button {
 
 # ---------------------------- 1. CENTRAL PRODUCT CONFIGURATION ----------------------------
 # To add a new product, just add a new entry to this dictionary.
-# The key (e.g., "CL") is the symbol, 'name' is the display name, and 'file' is the exact filename.
 PRODUCT_CONFIG = {
     "CL": {"name": "WTI Crude Oil", "file": "WTI_Outright.xlsx"},
     "BZ": {"name": "Brent Crude Oil", "file": "Brent_Outright.xlsx"},
     "ADM": {"name": "Gasoil", "file": "ADM_Outright.xlsx"},
     "DBI": {"name": "Dubai Crude Oil", "file": "DBI_Outright.xlsx"},
     "HOU": {"name": "Houston Crude Oil", "file": "HOU_Outright.xlsx"},
-    # Example for a future product:
-    # "NG": {"name": "Natural Gas", "file": "NG_Outright.xlsx"},
 }
 
 
@@ -86,14 +83,11 @@ def overlay_figure(contracts, curves: dict, y_label="Last Price ($)", title="Fut
 def filter_dates(df, selected_range):
     max_date = df["Date"].max()
     range_map = {
-        "Last 1 Week": timedelta(weeks=1),
-        "Last 2 Weeks": timedelta(weeks=2),
-        "Last 1 Month": timedelta(days=30),
-        "Last 6 Months": timedelta(days=180),
+        "Last 1 Week": timedelta(weeks=1), "Last 2 Weeks": timedelta(weeks=2),
+        "Last 1 Month": timedelta(days=30), "Last 6 Months": timedelta(days=180),
         "Last 1 Year": timedelta(days=365),
     }
-    if selected_range == "Full History":
-        return df
+    if selected_range == "Full History": return df
     min_date = max_date - range_map.get(selected_range, timedelta(0))
     return df[df["Date"] >= min_date]
 
@@ -104,6 +98,7 @@ selected_symbol = st.sidebar.selectbox(
     "Select Product",
     options=list(PRODUCT_CONFIG.keys()),
     format_func=lambda symbol: PRODUCT_CONFIG[symbol]["name"],
+    key="product_selector" # A key for the main selector
 )
 selected_product_info = PRODUCT_CONFIG[selected_symbol]
 file_path = selected_product_info["file"]
@@ -111,7 +106,6 @@ file_path = selected_product_info["file"]
 # ---------------------------- Main App Logic ----------------------------
 st.title(f"{selected_product_info['name']} Curve Viewer")
 
-# --- Check if data file exists and render UI accordingly ---
 if not os.path.exists(file_path):
     st.caption("Analysis of futures curves, spreads, and historical evolution.")
     st.markdown(f'<div class="placeholder-text">Data for {selected_product_info["name"]} is not yet available.<br>Work in Progress...</div>', unsafe_allow_html=True)
@@ -123,19 +117,14 @@ except Exception as e:
     st.error(f"An error occurred while loading the data file `{file_path}`: {e}")
     st.stop()
 
-# --- Sidebar Date Controls (only shown if data is loaded) ---
+# --- Sidebar Date Controls ---
 st.sidebar.header("Date Selection")
 all_dates = sorted(df["Date"].dt.date.unique().tolist(), reverse=True)
 max_d, min_d = all_dates[0], all_dates[-1]
 
-# Use session state to manage widget defaults and prevent errors on product switch
-if 'product' not in st.session_state or st.session_state.product != selected_symbol:
-    st.session_state.product = selected_symbol
-    st.session_state.single_date = max_d
-    st.session_state.multi_dates = [all_dates[0], all_dates[min(1, len(all_dates)-1)]]
-
-single_date = st.sidebar.date_input("Single Date", value=st.session_state.single_date, min_value=min_d, max_value=max_d, key=f"date_input_{selected_symbol}")
-multi_dates = st.sidebar.multiselect("Multi-Date Overlay", options=all_dates, default=st.session_state.multi_dates, key=f"multiselect_{selected_symbol}")
+# **FIX**: Add unique keys based on the selected product symbol to all widgets
+single_date = st.sidebar.date_input("Single Date", value=max_d, min_value=min_d, max_value=max_d, key=f"date_input_{selected_symbol}")
+multi_dates = st.sidebar.multiselect("Multi-Date Overlay", options=all_dates, default=[all_dates[0], all_dates[min(1, len(all_dates)-1)]], key=f"multiselect_{selected_symbol}")
 
 st.sidebar.header("Display Options")
 normalize = st.sidebar.checkbox("Normalize curves (z-score)", key=f"normalize_{selected_symbol}")
@@ -205,7 +194,7 @@ with tab2:
             fig_spread.update_layout(title="Historical Spread Comparison", xaxis_title="Date", yaxis_title="Price Difference ($)", template="plotly_white")
             st.plotly_chart(fig_spread, use_container_width=True)
             if do_export:
-                st.download_button("Download Spread CSV", pd.DataFrame(csv_data).to_csv(index=False).encode("utf-8"), file_name=f"{selected_symbol}_spreads.csv", mime="text/csv")
+                st.download_button("Download Spread CSV", pd.DataFrame(csv_data).to_csv(index=False).encode("utf-8"), file_name=f"{selected_symbol}_spreads.csv", mime="text/csv", key=f"dl_spread_{selected_symbol}")
 
     with sub_tab2:
         st.markdown("**Compare Multiple Butterfly Spreads Over Time**")
@@ -242,7 +231,7 @@ with tab2:
             fig_fly.update_layout(title="Historical Fly Comparison", xaxis_title="Date", yaxis_title="Price Difference ($)", template="plotly_white")
             st.plotly_chart(fig_fly, use_container_width=True)
             if do_export:
-                st.download_button("Download Fly CSV", pd.DataFrame(fly_csv_data).to_csv(index=False).encode("utf-8"), file_name=f"{selected_symbol}_flys.csv", mime="text/csv")
+                st.download_button("Download Fly CSV", pd.DataFrame(fly_csv_data).to_csv(index=False).encode("utf-8"), file_name=f"{selected_symbol}_flys.csv", mime="text/csv", key=f"dl_fly_{selected_symbol}")
 
 with tab3:
     st.header("Curve Evolution Animation")
@@ -275,7 +264,7 @@ with tab3:
             ),
             frames=[go.Frame(
                 data=[go.Scatter(x=contracts, y=anim_df.loc[i, contracts])],
-                name=str(anim_df.loc[i, "Date"].date())
+                name=str( anim_df.loc[i, "Date"].date() )
             ) for i in range(len(anim_df))]
         )
         st.plotly_chart(fig_anim, use_container_width=True)

@@ -31,7 +31,9 @@ div.stButton > button {
 """, unsafe_allow_html=True)
 
 # ---------------------------- Data loader ----------------------------
-@st.cache_data(show_spinner=True)
+# ---------------------------- Data loader ----------------------------
+# remove cache OR set ttl so file reloads if updated
+@st.cache_data(show_spinner=True, ttl=0)  # ttl=0 ensures reload each time app restarts
 def load_wti(file_or_path):
     df_raw = pd.read_excel(file_or_path, header=None, engine="openpyxl")
     hdr0 = df_raw.iloc[0].tolist()
@@ -44,6 +46,7 @@ def load_wti(file_or_path):
         df[c] = pd.to_numeric(df[c], errors="coerce")
     df = df.dropna(subset=["Date"]).sort_values("Date").reset_index(drop=True)
     return df, contracts
+
 
 def curve_for_date(df: pd.DataFrame, contracts, d: date) -> pd.Series | None:
     row = df.loc[df["Date"].dt.date == d, contracts]
@@ -169,8 +172,10 @@ if do_export:
     st.download_button("Download Spread CSV", csv_spread, file_name=f"spread_{c1}_{c2}.csv", mime="text/csv")
 
 # ---------------------------- Section D: Curve Evolution Animation ----------------------------
+# ---------------------------- Section D: Curve Evolution Animation ----------------------------
 st.subheader("Historical Curve Evolution (Animation)")
 anim_df = work_df[["Date"] + contracts].copy().dropna(subset=contracts)
+
 fig_anim = go.Figure(
     data=[go.Scatter(x=contracts, y=anim_df.loc[0, contracts], mode="lines+markers")],
     layout=go.Layout(
@@ -186,8 +191,8 @@ fig_anim = go.Figure(
                 dict(
                     label="Play",
                     method="animate",
-                    args=[None, {"frame": {"duration": 300, "redraw": True},
-                                 "fromcurrent": True, "transition": {"duration": 0}}]
+                    args=[None, {"frame": {"duration": 1000, "redraw": True},  # slower: 1000ms = 1s per frame
+                                 "fromcurrent": True, "transition": {"duration": 300}}]
                 ),
                 dict(
                     label="Pause",
@@ -197,11 +202,13 @@ fig_anim = go.Figure(
             ]
         )],
         sliders=[dict(
+            transition={"duration": 300},
+            currentvalue={"prefix": "Date: ", "font": {"size": 14}},
             steps=[dict(
                 method="animate",
                 args=[[str(d.date())], {"mode": "immediate",
                                         "frame": {"duration": 0, "redraw": True},
-                                        "transition": {"duration": 0}}],
+                                        "transition": {"duration": 300}}],
                 label=str(d.date())
             ) for d in anim_df["Date"]]
         )]
@@ -212,6 +219,7 @@ fig_anim = go.Figure(
 )
 
 st.plotly_chart(fig_anim, use_container_width=True)
+
 
 # ---------------------------- Preview parsed data ----------------------------
 with st.expander("Preview parsed data (first 25 rows)"):

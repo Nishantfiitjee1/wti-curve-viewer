@@ -45,13 +45,11 @@ div.stButton > button {
 # Define the single master Excel file.
 MASTER_EXCEL_FILE = "Futures_Data.xlsx"
 
-# **FIX**: Corrected the sheet names to match the user's Excel file exactly.
+# This configuration is now case-insensitive because of the code fix below.
 PRODUCT_CONFIG = {
     "CL": {"name": "WTI Crude Oil", "sheet": "WTI_Outright"},
-    "BZ": {"name": "Brent Crude Oil", "sheet": "Brent_outright"}, # Corrected: 'outright' is lowercase
-    "DBI": {"name": "Dubai Crude Oil", "sheet": "Dubai_Outright"}, # Corrected: 'Outright' is capitalized
-    # "ADM": {"name": "Gasoil", "sheet": "ADM_Outright"},
-    # "HOU": {"name": "Houston Crude Oil", "sheet": "HOU_Outright"},
+    "BZ": {"name": "Brent Crude Oil", "sheet": "Brent_outright"},
+    "DBI": {"name": "Dubai Crude Oil", "sheet": "Dubai_Outright"},
 }
 
 
@@ -104,32 +102,42 @@ selected_symbol = st.sidebar.selectbox(
     key="product_selector"
 )
 selected_product_info = PRODUCT_CONFIG[selected_symbol]
-target_sheet_name = selected_product_info["sheet"]
+target_sheet_name_from_config = selected_product_info["sheet"]
 
 # ---------------------------- Main App Logic ----------------------------
 st.title(f"{selected_product_info['name']} Curve Viewer")
 
-# --- Check 1: Does the master Excel file exist? ---
 if not os.path.exists(MASTER_EXCEL_FILE):
     st.error(f"Master data file not found: `{MASTER_EXCEL_FILE}`. Please ensure the file is in the same directory.")
     st.stop()
 
-# --- Check 2: Does the required sheet exist within the file? ---
+# --- **FIX**: Robust sheet name checking (case and space insensitive) ---
 try:
-    excel_sheets = pd.ExcelFile(MASTER_EXCEL_FILE).sheet_names
-    if target_sheet_name not in excel_sheets:
+    excel_file_handler = pd.ExcelFile(MASTER_EXCEL_FILE)
+    excel_sheets = excel_file_handler.sheet_names
+    
+    cleaned_target_sheet = target_sheet_name_from_config.strip().lower()
+    actual_sheet_to_load = None
+    
+    for sheet in excel_sheets:
+        if sheet.strip().lower() == cleaned_target_sheet:
+            actual_sheet_to_load = sheet
+            break
+            
+    if actual_sheet_to_load is None:
         st.caption("Analysis of futures curves, spreads, and historical evolution.")
-        st.markdown(f'<div class="placeholder-text">Data for {selected_product_info["name"]} is not yet available.<br>Sheet `{target_sheet_name}` not found in the Excel file.</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="placeholder-text">Data for {selected_product_info["name"]} is not yet available.<br>Sheet `{target_sheet_name_from_config}` not found in the Excel file.</div>', unsafe_allow_html=True)
         st.stop()
+        
 except Exception as e:
     st.error(f"Could not read the master Excel file. Error: {e}")
     st.stop()
 
 # --- If checks pass, load the data and build the dashboard ---
 try:
-    df, contracts = load_product_data(MASTER_EXCEL_FILE, target_sheet_name)
+    df, contracts = load_product_data(MASTER_EXCEL_FILE, actual_sheet_to_load)
 except Exception as e:
-    st.error(f"An error occurred while loading the data from sheet `{target_sheet_name}`: {e}")
+    st.error(f"An error occurred while loading the data from sheet `{actual_sheet_to_load}`: {e}")
     st.stop()
 
 # --- Sidebar Date Controls ---

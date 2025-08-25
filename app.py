@@ -116,7 +116,7 @@ normalize = st.sidebar.checkbox("Normalize curves (z-score)")
 do_export = st.sidebar.checkbox("Enable CSV export")
 
 # ---------------------------- Main title ----------------------------
-st.title("Curve")
+st.title("Curves")
 st.caption("Analysis of futures curves, spreads, and historical evolution.")
 
 # ---------------------------- Data Preparation ----------------------------

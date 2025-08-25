@@ -116,8 +116,8 @@ normalize = st.sidebar.checkbox("Normalize curves (z-score)")
 do_export = st.sidebar.checkbox("Enable CSV export")
 
 # ---------------------------- Main title ----------------------------
-st.title("WTI Outright Curve Viewer")
-st.caption("Interactive analysis of futures curves, spreads, and historical evolution.")
+st.title("Curve")
+st.caption("Analysis of futures curves, spreads, and historical evolution.")
 
 # ---------------------------- Data Preparation ----------------------------
 work_df = df.copy()

@@ -45,11 +45,11 @@ div.stButton > button {
 # Define the single master Excel file.
 MASTER_EXCEL_FILE = "Futures_Data.xlsx"
 
-# Map product symbols to their display names and the exact sheet name in the Excel file.
+# **FIX**: Corrected the sheet names to match the user's Excel file exactly.
 PRODUCT_CONFIG = {
     "CL": {"name": "WTI Crude Oil", "sheet": "WTI_Outright"},
-    "BZ": {"name": "Brent Crude Oil", "sheet": "Brent_Outright"},
-    "DBI": {"name": "Dubai Crude Oil", "sheet": "Dubai_outright"},
+    "BZ": {"name": "Brent Crude Oil", "sheet": "Brent_outright"}, # Corrected: 'outright' is lowercase
+    "DBI": {"name": "Dubai Crude Oil", "sheet": "Dubai_Outright"}, # Corrected: 'Outright' is capitalized
     # "ADM": {"name": "Gasoil", "sheet": "ADM_Outright"},
     # "HOU": {"name": "Houston Crude Oil", "sheet": "HOU_Outright"},
 }

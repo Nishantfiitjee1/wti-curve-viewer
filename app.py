@@ -55,9 +55,10 @@ PRODUCT_CONFIG = {
 }
 
 
-# ---------------------------- Data Loading & Utilities (No major changes) ----------------------------
+# ---------------------------- Data Loading & Utilities ----------------------------
 @st.cache_data(show_spinner="Loading product data...", ttl=3600)
 def load_product_data(file_path):
+    """Generalized function to load and parse futures data from a given Excel file."""
     df_raw = pd.read_excel(file_path, header=None, engine="openpyxl")
     hdr0 = df_raw.iloc[0].tolist()
     contracts = [str(x).strip() for x in hdr0[1:] if pd.notna(x) and str(x).strip() != ""]
@@ -72,8 +73,7 @@ def load_product_data(file_path):
 
 def curve_for_date(df: pd.DataFrame, contracts, d: date) -> pd.Series | None:
     row = df.loc[df["Date"].dt.date == d, contracts]
-    if row.empty: return None
-    return row.iloc[0]
+    return row.iloc[0] if not row.empty else None
 
 def overlay_figure(contracts, curves: dict, y_label="Last Price ($)", title="Futures Curve") -> go.Figure:
     fig = go.Figure()
@@ -85,24 +85,25 @@ def overlay_figure(contracts, curves: dict, y_label="Last Price ($)", title="Fut
 
 def filter_dates(df, selected_range):
     max_date = df["Date"].max()
-    if selected_range == "Full History": return df
-    elif selected_range == "Last 1 Week": min_date = max_date - timedelta(weeks=1)
-    elif selected_range == "Last 2 Weeks": min_date = max_date - timedelta(weeks=2)
-    elif selected_range == "Last 1 Month": min_date = max_date - timedelta(days=30)
-    elif selected_range == "Last 6 Months": min_date = max_date - timedelta(days=180)
-    elif selected_range == "Last 1 Year": min_date = max_date - timedelta(days=365)
-    else: min_date = df["Date"].min()
+    range_map = {
+        "Last 1 Week": timedelta(weeks=1),
+        "Last 2 Weeks": timedelta(weeks=2),
+        "Last 1 Month": timedelta(days=30),
+        "Last 6 Months": timedelta(days=180),
+        "Last 1 Year": timedelta(days=365),
+    }
+    if selected_range == "Full History":
+        return df
+    min_date = max_date - range_map.get(selected_range, timedelta(0))
     return df[df["Date"] >= min_date]
 
 # ---------------------------- Sidebar & Product Selection ----------------------------
 st.sidebar.title("Global Controls")
 
-# Product selector
 selected_symbol = st.sidebar.selectbox(
     "Select Product",
     options=list(PRODUCT_CONFIG.keys()),
     format_func=lambda symbol: PRODUCT_CONFIG[symbol]["name"],
-    index=0
 )
 selected_product_info = PRODUCT_CONFIG[selected_symbol]
 file_path = selected_product_info["file"]
@@ -110,14 +111,12 @@ file_path = selected_product_info["file"]
 # ---------------------------- Main App Logic ----------------------------
 st.title(f"{selected_product_info['name']} Curve Viewer")
 
-# --- 2. CHECK IF DATA FILE EXISTS ---
+# --- Check if data file exists and render UI accordingly ---
 if not os.path.exists(file_path):
-    # --- 3. DISPLAY PLACEHOLDER IF FILE IS MISSING ---
-    st.caption("Interactive analysis of futures curves, spreads, and historical evolution.")
+    st.caption("Analysis of futures curves, spreads, and historical evolution.")
     st.markdown(f'<div class="placeholder-text">Data for {selected_product_info["name"]} is not yet available.<br>Work in Progress...</div>', unsafe_allow_html=True)
-    st.stop() # Stop execution for this product
+    st.stop()
 
-# --- If file exists, proceed with loading and displaying the dashboard ---
 try:
     df, contracts = load_product_data(file_path)
 except Exception as e:
@@ -129,12 +128,11 @@ st.sidebar.header("Date Selection")
 all_dates = sorted(df["Date"].dt.date.unique().tolist(), reverse=True)
 max_d, min_d = all_dates[0], all_dates[-1]
 
-# --- 4. USE SESSION STATE FOR UNIQUE WIDGET KEYS ---
-# This prevents errors when switching between products with different date ranges/contracts
-if 'single_date' not in st.session_state or st.session_state.get('product') != selected_symbol:
+# Use session state to manage widget defaults and prevent errors on product switch
+if 'product' not in st.session_state or st.session_state.product != selected_symbol:
+    st.session_state.product = selected_symbol
     st.session_state.single_date = max_d
     st.session_state.multi_dates = [all_dates[0], all_dates[min(1, len(all_dates)-1)]]
-    st.session_state.product = selected_symbol
 
 single_date = st.sidebar.date_input("Single Date", value=st.session_state.single_date, min_value=min_d, max_value=max_d, key=f"date_input_{selected_symbol}")
 multi_dates = st.sidebar.multiselect("Multi-Date Overlay", options=all_dates, default=st.session_state.multi_dates, key=f"multiselect_{selected_symbol}")
@@ -150,11 +148,10 @@ if normalize:
     work_df[contracts] = (vals - vals.mean(axis=1).values[:, None]) / vals.std(axis=1).values[:, None]
 
 # --- Main UI Tabs ---
-st.caption("Interactive analysis of futures curves, spreads, and historical evolution.")
-tab1, tab2, tab3 = st.tabs(["Curve Shape Analysis", "Historical Time Series", "Curve Animation"])
+st.caption("Analysis of futures curves, spreads, and historical evolution.")
+tab1, tab2, tab3 = st.tabs(["Outright", "Spread and Fly", "Curve Animation"])
 
 with tab1:
-    # (Content of Tab 1)
     st.header(f"Curve Analysis for {single_date}")
     s1 = curve_for_date(work_df, contracts, single_date)
     if s1 is None:
@@ -164,7 +161,6 @@ with tab1:
         m_cols = st.columns(3)
         m_cols[0].metric(label=f"Prompt Price ({contracts[0]})", value=f"{s1.get(contracts[0], 0):.2f}")
         if len(contracts) > 1: m_cols[1].metric(label=f"M1-M2 Spread ({contracts[0]}-{contracts[1]})", value=f"{s1[contracts[0]] - s1[contracts[1]]:.2f}")
-        if len(contracts) > 11: m_cols[2].metric(label=f"M1-M12 Spread ({contracts[0]}-{contracts[11]})", value=f"{s1[contracts[0]] - s1[contracts[11]]:.2f}")
         
         st.markdown("---")
         col1, col2 = st.columns(2)
@@ -181,7 +177,6 @@ with tab1:
                 st.plotly_chart(fig_overlay, use_container_width=True)
 
 with tab2:
-    # (Content of Tab 2)
     st.header("Spread & Fly Time Series Analysis")
     selected_range = st.selectbox("Select date range for analysis", ["Full History", "Last 1 Year", "Last 6 Months", "Last 1 Month", "Last 2 Weeks", "Last 1 Week"], index=1, key=f"range_{selected_symbol}")
     filtered_df = filter_dates(work_df, selected_range)
@@ -195,24 +190,95 @@ with tab2:
             options=[f"{c1} - {c2}" for i, c1 in enumerate(contracts) for c2 in contracts[i+1:]],
             default=default_spread, key=f"spread_pairs_{selected_symbol}"
         )
-        # ... (rest of spread logic as before)
+        if spread_pairs:
+            fig_spread = go.Figure()
+            stats_cols = st.columns(len(spread_pairs))
+            csv_data = {"Date": filtered_df["Date"].dt.date}
+            for i, pair in enumerate(spread_pairs):
+                c1, c2 = [x.strip() for x in pair.split("-")]
+                spread_curve = filtered_df[c1] - filtered_df[c2]
+                csv_data[f"{c1}-{c2}"] = spread_curve
+                fig_spread.add_trace(go.Scatter(x=filtered_df["Date"], y=spread_curve, mode="lines", name=f"{c1}-{c2}"))
+                with stats_cols[i]:
+                    st.metric(label=f"{c1}-{c2} (Latest)", value=f"{spread_curve.iloc[-1]:.2f}")
+            st.markdown("---")
+            fig_spread.update_layout(title="Historical Spread Comparison", xaxis_title="Date", yaxis_title="Price Difference ($)", template="plotly_white")
+            st.plotly_chart(fig_spread, use_container_width=True)
+            if do_export:
+                st.download_button("Download Spread CSV", pd.DataFrame(csv_data).to_csv(index=False).encode("utf-8"), file_name=f"{selected_symbol}_spreads.csv", mime="text/csv")
 
     with sub_tab2:
         st.markdown("**Compare Multiple Butterfly Spreads Over Time**")
         fly_type = st.radio("Fly construction method:", ["Auto (consecutive months)", "Manual selection"], index=0, horizontal=True, key=f"fly_type_{selected_symbol}")
-        # ... (rest of fly logic as before)
+        selected_flies = []
+        if fly_type == "Manual selection":
+            num_flies = st.number_input("Number of flies", min_value=1, max_value=5, value=1, step=1, key=f"num_flies_{selected_symbol}")
+            for i in range(num_flies):
+                cols = st.columns(3)
+                f1 = cols[0].selectbox(f"Wing 1 (Fly {i+1})", contracts, index=0, key=f"fly_f1_{i}_{selected_symbol}")
+                f2 = cols[1].selectbox(f"Body (Fly {i+1})", contracts, index=1, key=f"fly_f2_{i}_{selected_symbol}")
+                f3 = cols[2].selectbox(f"Wing 2 (Fly {i+1})", contracts, index=2, key=f"fly_f3_{i}_{selected_symbol}")
+                selected_flies.append((f1, f2, f3))
+        else: # Auto
+            default_fly = [contracts[0]] if len(contracts) > 0 else []
+            base_contracts = st.multiselect("Select base contracts for Auto Fly", contracts, default=default_fly, key=f"fly_base_{selected_symbol}")
+            for base in base_contracts:
+                idx = contracts.index(base)
+                if idx + 2 < len(contracts): selected_flies.append((contracts[idx], contracts[idx+1], contracts[idx+2]))
+                else: st.warning(f"Not enough consecutive contracts for '{base}' auto fly. Skipping.")
+        
+        if selected_flies:
+            fig_fly = go.Figure()
+            fly_stats_cols = st.columns(len(selected_flies))
+            fly_csv_data = {"Date": filtered_df["Date"].dt.date}
+            for i, (f1, f2, f3) in enumerate(selected_flies):
+                fly_curve = filtered_df[f1] - 2 * filtered_df[f2] + filtered_df[f3]
+                fly_name = f"{f1}-{f2}-{f3}"
+                fly_csv_data[f"Fly_{fly_name}"] = fly_curve
+                fig_fly.add_trace(go.Scatter(x=filtered_df["Date"], y=fly_curve, mode="lines", name=f"Fly {fly_name}"))
+                with fly_stats_cols[i]:
+                    st.metric(label=f"Fly {fly_name} (Latest)", value=f"{fly_curve.iloc[-1]:.2f}")
+            st.markdown("---")
+            fig_fly.update_layout(title="Historical Fly Comparison", xaxis_title="Date", yaxis_title="Price Difference ($)", template="plotly_white")
+            st.plotly_chart(fig_fly, use_container_width=True)
+            if do_export:
+                st.download_button("Download Fly CSV", pd.DataFrame(fly_csv_data).to_csv(index=False).encode("utf-8"), file_name=f"{selected_symbol}_flys.csv", mime="text/csv")
 
 with tab3:
-    # (Content of Tab 3)
     st.header("Curve Evolution Animation")
     st.info("Use the slider or the 'Play' button to animate the daily changes in the forward curve.")
     anim_df = work_df[["Date"] + contracts].copy().dropna(subset=contracts).reset_index(drop=True)
     if anim_df.empty:
         st.warning("Not enough data to create an animation.")
     else:
-        # ... (rest of animation logic as before)
-        pass # Placeholder for the animation figure code
+        fig_anim = go.Figure(
+            data=[go.Scatter(x=contracts, y=anim_df.loc[0, contracts], mode="lines+markers")],
+            layout=go.Layout(
+                title="Forward Curve Evolution",
+                xaxis_title="Contract", yaxis_title="Price ($)" if not normalize else "Z-score",
+                template="plotly_white", margin=dict(l=40, r=20, t=60, b=40),
+                updatemenus=[dict(
+                    type="buttons", showactive=False, y=1.15, x=1.05, xanchor="right", yanchor="top",
+                    buttons=[
+                        dict(label="Play", method="animate", args=[None, {"frame": {"duration": 50, "redraw": True}, "fromcurrent": True, "transition": {"duration": 0}}]),
+                        dict(label="Pause", method="animate", args=[[None], {"frame": {"duration": 0, "redraw": False}, "mode": "immediate"}])
+                    ]
+                )],
+                sliders=[dict(
+                    active=0, transition={"duration": 0}, currentvalue={"prefix": "Date: ", "font": {"size": 14}},
+                    steps=[dict(
+                        method="animate",
+                        args=[[str(d.date())], {"mode": "immediate", "frame": {"duration": 100, "redraw": True}, "transition": {"duration": 50}}],
+                        label=str(d.date())
+                    ) for d in anim_df["Date"]]
+                )]
+            ),
+            frames=[go.Frame(
+                data=[go.Scatter(x=contracts, y=anim_df.loc[i, contracts])],
+                name=str(anim_df.loc[i, "Date"].date())
+            ) for i in range(len(anim_df))]
+        )
+        st.plotly_chart(fig_anim, use_container_width=True)
 
 with st.expander("Preview Raw Data"):
     st.dataframe(df.head(25))
-

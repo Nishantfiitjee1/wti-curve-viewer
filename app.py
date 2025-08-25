@@ -42,21 +42,24 @@ div.stButton > button {
 
 
 # ---------------------------- 1. CENTRAL PRODUCT CONFIGURATION ----------------------------
-# To add a new product, just add a new entry to this dictionary.
+# Define the single master Excel file.
+MASTER_EXCEL_FILE = "Futures_Data.xlsx"
+
+# Map product symbols to their display names and the exact sheet name in the Excel file.
 PRODUCT_CONFIG = {
-    "CL": {"name": "WTI Crude Oil", "file": "WTI_Outright.xlsx"},
-    "BZ": {"name": "Brent Crude Oil", "file": "Brent_Outright.xlsx"},
-    "ADM": {"name": "Gasoil", "file": "ADM_Outright.xlsx"},
-    "DBI": {"name": "Dubai Crude Oil", "file": "DBI_Outright.xlsx"},
-    "HOU": {"name": "Houston Crude Oil", "file": "HOU_Outright.xlsx"},
+    "CL": {"name": "WTI Crude Oil", "sheet": "WTI_Outright"},
+    "BZ": {"name": "Brent Crude Oil", "sheet": "Brent_Outright"},
+    "DBI": {"name": "Dubai Crude Oil", "sheet": "Dubai_outright"},
+    # "ADM": {"name": "Gasoil", "sheet": "ADM_Outright"},
+    # "HOU": {"name": "Houston Crude Oil", "sheet": "HOU_Outright"},
 }
 
 
 # ---------------------------- Data Loading & Utilities ----------------------------
 @st.cache_data(show_spinner="Loading product data...", ttl=3600)
-def load_product_data(file_path):
-    """Generalized function to load and parse futures data from a given Excel file."""
-    df_raw = pd.read_excel(file_path, header=None, engine="openpyxl")
+def load_product_data(file_path, sheet_name):
+    """Loads and parses futures data from a specific sheet in the master Excel file."""
+    df_raw = pd.read_excel(file_path, sheet_name=sheet_name, header=None, engine="openpyxl")
     hdr0 = df_raw.iloc[0].tolist()
     contracts = [str(x).strip() for x in hdr0[1:] if pd.notna(x) and str(x).strip() != ""]
     col_names = ["Date"] + contracts
@@ -101,20 +104,32 @@ selected_symbol = st.sidebar.selectbox(
     key="product_selector"
 )
 selected_product_info = PRODUCT_CONFIG[selected_symbol]
-file_path = selected_product_info["file"]
+target_sheet_name = selected_product_info["sheet"]
 
 # ---------------------------- Main App Logic ----------------------------
 st.title(f"{selected_product_info['name']} Curve Viewer")
 
-if not os.path.exists(file_path):
-    st.caption("Analysis of futures curves, spreads, and historical evolution.")
-    st.markdown(f'<div class="placeholder-text">Data for {selected_product_info["name"]} is not yet available.<br>Work in Progress...</div>', unsafe_allow_html=True)
+# --- Check 1: Does the master Excel file exist? ---
+if not os.path.exists(MASTER_EXCEL_FILE):
+    st.error(f"Master data file not found: `{MASTER_EXCEL_FILE}`. Please ensure the file is in the same directory.")
     st.stop()
 
+# --- Check 2: Does the required sheet exist within the file? ---
 try:
-    df, contracts = load_product_data(file_path)
+    excel_sheets = pd.ExcelFile(MASTER_EXCEL_FILE).sheet_names
+    if target_sheet_name not in excel_sheets:
+        st.caption("Analysis of futures curves, spreads, and historical evolution.")
+        st.markdown(f'<div class="placeholder-text">Data for {selected_product_info["name"]} is not yet available.<br>Sheet `{target_sheet_name}` not found in the Excel file.</div>', unsafe_allow_html=True)
+        st.stop()
 except Exception as e:
-    st.error(f"An error occurred while loading the data file `{file_path}`: {e}")
+    st.error(f"Could not read the master Excel file. Error: {e}")
+    st.stop()
+
+# --- If checks pass, load the data and build the dashboard ---
+try:
+    df, contracts = load_product_data(MASTER_EXCEL_FILE, target_sheet_name)
+except Exception as e:
+    st.error(f"An error occurred while loading the data from sheet `{target_sheet_name}`: {e}")
     st.stop()
 
 # --- Sidebar Date Controls ---
@@ -147,15 +162,15 @@ with tab1:
     else:
         st.markdown("##### Key Curve Metrics")
         m_cols = st.columns(3)
-        m_cols[0].metric(label=f"Prompt Price ({contracts[0]})", value=f"{s1.get(contracts[0], 0):.2f}")
+        if len(contracts) > 0: m_cols[0].metric(label=f"Prompt Price ({contracts[0]})", value=f"{s1.get(contracts[0], 0):.2f}")
         if len(contracts) > 1: m_cols[1].metric(label=f"M1-M2 Spread ({contracts[0]}-{contracts[1]})", value=f"{s1[contracts[0]] - s1[contracts[1]]:.2f}")
+        if len(contracts) > 11: m_cols[2].metric(label=f"M1-M12 Spread ({contracts[0]}-{contracts[11]})", value=f"{s1[contracts[0]] - s1[contracts[11]]:.2f}")
         
         st.markdown("---")
         col1, col2 = st.columns(2)
         with col1:
             st.markdown("##### Single Date Curve")
             fig_single = overlay_figure(contracts, {single_date: s1}, y_label=("Z-score" if normalize else "Last Price ($)"))
-            # **FIX**: Added a unique key to the plotly chart
             st.plotly_chart(fig_single, use_container_width=True, key=f"single_chart_{selected_symbol}")
         with col2:
             st.markdown("##### Multi-Date Overlay")
@@ -163,7 +178,6 @@ with tab1:
             if not valid_curves: st.warning("No data found for any overlay dates.")
             else:
                 fig_overlay = overlay_figure(contracts, valid_curves, y_label=("Z-score" if normalize else "Last Price ($)"))
-                # **FIX**: Added a unique key to the plotly chart
                 st.plotly_chart(fig_overlay, use_container_width=True, key=f"multi_chart_{selected_symbol}")
 
 with tab2:
@@ -210,7 +224,7 @@ with tab2:
                 f3 = cols[2].selectbox(f"Wing 2 (Fly {i+1})", contracts, index=2, key=f"fly_f3_{i}_{selected_symbol}")
                 selected_flies.append((f1, f2, f3))
         else: # Auto
-            default_fly = [contracts[0]] if len(contracts) > 0 else []
+            default_fly = [contracts[0]] if len(contracts) > 2 else []
             base_contracts = st.multiselect("Select base contracts for Auto Fly", contracts, default=default_fly, key=f"fly_base_{selected_symbol}")
             for base in base_contracts:
                 idx = contracts.index(base)

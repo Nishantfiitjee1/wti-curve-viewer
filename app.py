@@ -45,11 +45,12 @@ div.stButton > button {
 # Define the single master Excel file.
 MASTER_EXCEL_FILE = "Futures_Data.xlsx"
 
-# This configuration is now case-insensitive because of the code fix below.
+# **FIX**: Cleaned up the config to only include products present in the user's Excel file.
+# Ensured sheet names match the provided file information exactly.
 PRODUCT_CONFIG = {
-    "CL": {"name": "WTI Crude Oil", "file": "Futures_Data.xlsx", "sheet": "WTI_Outright"},
-    "BZ": {"name": "Brent Crude Oil", "file": "Futures_Data.xlsx", "sheet": "Brent_outright"},
-    "DBI": {"name": "Dubai Crude Oil", "file": "Futures_Data.xlsx", "sheet": "Dubai_Outright"},
+    "CL": {"name": "WTI Crude Oil", "sheet": "WTI_Outright"},
+    "BZ": {"name": "Brent Crude Oil", "sheet": "Brent_outright"},
+    "DBI": {"name": "Dubai Crude Oil", "sheet": "Dubai_Outright"},
 }
 
 
@@ -111,7 +112,7 @@ if not os.path.exists(MASTER_EXCEL_FILE):
     st.error(f"Master data file not found: `{MASTER_EXCEL_FILE}`. Please ensure the file is in the same directory.")
     st.stop()
 
-# --- **FIX**: Robust sheet name checking (case and space insensitive) ---
+# --- Robust sheet name checking (case and space insensitive) ---
 try:
     excel_file_handler = pd.ExcelFile(MASTER_EXCEL_FILE)
     excel_sheets = excel_file_handler.sheet_names

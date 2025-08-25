@@ -126,7 +126,7 @@ if normalize:
     work_df[contracts] = (vals - vals.mean(axis=1).values[:, None]) / vals.std(axis=1).values[:, None]
 
 # ---------------------------- UI Structure: Main tabs ----------------------------
-tab1, tab2, tab3 = st.tabs(["Curve Shape Analysis", "Historical Time Series", "Curve Animation"])
+tab1, tab2, tab3 = st.tabs(["Outright", "Spread and Fly", "Curve Animation"])
 
 # ---------- TAB 1: CURVE SHAPE ANALYSIS ----------
 with tab1:
@@ -144,9 +144,6 @@ with tab1:
         
         m1m2_spread = s1[contracts[0]] - s1[contracts[1]] if len(contracts) > 1 else "N/A"
         m_cols[1].metric(label=f"M1-M2 Spread ({contracts[0]}-{contracts[1]})", value=f"{m1m2_spread:.2f}")
-
-        m1m12_spread = s1[contracts[0]] - s1[contracts[11]] if len(contracts) > 11 else "N/A"
-        m_cols[2].metric(label=f"M1-M12 Spread ({contracts[0]}-{contracts[11]})" if len(contracts) > 11 else "M1-M12 Spread", value=f"{m1m12_spread:.2f}" if isinstance(m1m12_spread, (int, float)) else "N/A")
         
         st.markdown("---")
         
@@ -199,8 +196,6 @@ with tab2:
                 
                 with stats_cols[i]:
                     st.metric(label=f"{c1}-{c2} (Latest)", value=f"{spread_curve.iloc[-1]:.2f}")
-                    st.metric(label="Mean", value=f"{spread_curve.mean():.2f}")
-                    st.metric(label="Std. Dev.", value=f"{spread_curve.std():.2f}")
             
             st.markdown("---")
             fig_spread.update_layout(title="Historical Spread Comparison", xaxis_title="Date", yaxis_title="Price Difference ($)", template="plotly_white")
@@ -245,8 +240,6 @@ with tab2:
                 
                 with fly_stats_cols[i]:
                     st.metric(label=f"Fly {fly_name} (Latest)", value=f"{fly_curve.iloc[-1]:.2f}")
-                    st.metric(label="Mean", value=f"{fly_curve.mean():.2f}")
-                    st.metric(label="Std. Dev.", value=f"{fly_curve.std():.2f}")
 
             st.markdown("---")
             fig_fly.update_layout(title="Historical Fly Comparison", xaxis_title="Date", yaxis_title="Price Difference ($)", template="plotly_white")

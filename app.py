@@ -98,7 +98,7 @@ selected_symbol = st.sidebar.selectbox(
     "Select Product",
     options=list(PRODUCT_CONFIG.keys()),
     format_func=lambda symbol: PRODUCT_CONFIG[symbol]["name"],
-    key="product_selector" # A key for the main selector
+    key="product_selector"
 )
 selected_product_info = PRODUCT_CONFIG[selected_symbol]
 file_path = selected_product_info["file"]
@@ -122,7 +122,6 @@ st.sidebar.header("Date Selection")
 all_dates = sorted(df["Date"].dt.date.unique().tolist(), reverse=True)
 max_d, min_d = all_dates[0], all_dates[-1]
 
-# **FIX**: Add unique keys based on the selected product symbol to all widgets
 single_date = st.sidebar.date_input("Single Date", value=max_d, min_value=min_d, max_value=max_d, key=f"date_input_{selected_symbol}")
 multi_dates = st.sidebar.multiselect("Multi-Date Overlay", options=all_dates, default=[all_dates[0], all_dates[min(1, len(all_dates)-1)]], key=f"multiselect_{selected_symbol}")
 
@@ -156,14 +155,16 @@ with tab1:
         with col1:
             st.markdown("##### Single Date Curve")
             fig_single = overlay_figure(contracts, {single_date: s1}, y_label=("Z-score" if normalize else "Last Price ($)"))
-            st.plotly_chart(fig_single, use_container_width=True)
+            # **FIX**: Added a unique key to the plotly chart
+            st.plotly_chart(fig_single, use_container_width=True, key=f"single_chart_{selected_symbol}")
         with col2:
             st.markdown("##### Multi-Date Overlay")
             valid_curves = {d: s for d, s in {d: curve_for_date(work_df, contracts, d) for d in multi_dates}.items() if s is not None}
             if not valid_curves: st.warning("No data found for any overlay dates.")
             else:
                 fig_overlay = overlay_figure(contracts, valid_curves, y_label=("Z-score" if normalize else "Last Price ($)"))
-                st.plotly_chart(fig_overlay, use_container_width=True)
+                # **FIX**: Added a unique key to the plotly chart
+                st.plotly_chart(fig_overlay, use_container_width=True, key=f"multi_chart_{selected_symbol}")
 
 with tab2:
     st.header("Spread & Fly Time Series Analysis")
@@ -192,7 +193,7 @@ with tab2:
                     st.metric(label=f"{c1}-{c2} (Latest)", value=f"{spread_curve.iloc[-1]:.2f}")
             st.markdown("---")
             fig_spread.update_layout(title="Historical Spread Comparison", xaxis_title="Date", yaxis_title="Price Difference ($)", template="plotly_white")
-            st.plotly_chart(fig_spread, use_container_width=True)
+            st.plotly_chart(fig_spread, use_container_width=True, key=f"spread_chart_{selected_symbol}")
             if do_export:
                 st.download_button("Download Spread CSV", pd.DataFrame(csv_data).to_csv(index=False).encode("utf-8"), file_name=f"{selected_symbol}_spreads.csv", mime="text/csv", key=f"dl_spread_{selected_symbol}")
 
@@ -229,7 +230,7 @@ with tab2:
                     st.metric(label=f"Fly {fly_name} (Latest)", value=f"{fly_curve.iloc[-1]:.2f}")
             st.markdown("---")
             fig_fly.update_layout(title="Historical Fly Comparison", xaxis_title="Date", yaxis_title="Price Difference ($)", template="plotly_white")
-            st.plotly_chart(fig_fly, use_container_width=True)
+            st.plotly_chart(fig_fly, use_container_width=True, key=f"fly_chart_{selected_symbol}")
             if do_export:
                 st.download_button("Download Fly CSV", pd.DataFrame(fly_csv_data).to_csv(index=False).encode("utf-8"), file_name=f"{selected_symbol}_flys.csv", mime="text/csv", key=f"dl_fly_{selected_symbol}")
 
@@ -267,7 +268,7 @@ with tab3:
                 name=str( anim_df.loc[i, "Date"].date() )
             ) for i in range(len(anim_df))]
         )
-        st.plotly_chart(fig_anim, use_container_width=True)
+        st.plotly_chart(fig_anim, use_container_width=True, key=f"anim_chart_{selected_symbol}")
 
 with st.expander("Preview Raw Data"):
     st.dataframe(df.head(25))

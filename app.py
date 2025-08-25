@@ -47,9 +47,9 @@ MASTER_EXCEL_FILE = "Futures_Data.xlsx"
 
 # This configuration is now case-insensitive because of the code fix below.
 PRODUCT_CONFIG = {
-    "CL": {"name": "WTI Crude Oil", "sheet": "WTI_Outright"},
-    "BZ": {"name": "Brent Crude Oil", "sheet": "Brent_outright"},
-    "DBI": {"name": "Dubai Crude Oil", "sheet": "Dubai_Outright"},
+    "CL": {"name": "WTI Crude Oil", "file": "Futures_Data.xlsx", "sheet": "WTI_Outright"},
+    "BZ": {"name": "Brent Crude Oil", "file": "Futures_Data.xlsx", "sheet": "Brent_outright"},
+    "DBI": {"name": "Dubai Crude Oil", "file": "Futures_Data.xlsx", "sheet": "Dubai_Outright"},
 }
 
 

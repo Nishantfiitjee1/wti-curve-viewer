@@ -47,10 +47,11 @@ NEWS_EXCEL_FILE = "Important_news_date.xlsx"
 
 # Using the simplified sheet names as planned
 PRODUCT_CONFIG = {
-    "CL": {"name": "WTI Crude Oil", "sheet": "WTI"},
-    "BZ": {"name": "Brent Crude Oil", "sheet": "Brent"},
-    "DBI": {"name": "Dubai Crude Oil", "sheet": "Dubai"},
+    "CL": {"name": "WTI Crude Oil", "sheet": "WTI_Outright"},
+    "BZ": {"name": "Brent Crude Oil", "sheet": "Brent_outright"},
+    "DBI": {"name": "Dubai Crude Oil", "sheet": "Dubai_Outright"},
 }
+
 
 
 # ---------------------------- Data Loading & Utilities ----------------------------
@@ -59,7 +60,7 @@ def load_product_data(file_path, sheet_name):
     """Loads and parses futures data based on the two-header structure."""
     df_raw = pd.read_excel(file_path, sheet_name=sheet_name, header=None, engine="openpyxl")
     
-    # Dynamically find header and data start
+    # **FIX**: Dynamically find header and data start based on your Excel format
     header_row_index = df_raw[df_raw[0] == 'Dates'].index[0] - 1
     data_start_row_index = header_row_index + 2
 
@@ -81,7 +82,6 @@ def load_news_data(file_path):
     """Loads news data and handles 'Date' vs 'Dates' column names."""
     df_news = pd.read_excel(file_path, engine="openpyxl")
     
-    # **FIX**: Handle both 'Date' and 'Dates' as possible column names
     date_col = None
     if 'Date' in df_news.columns:
         date_col = 'Date'
@@ -89,7 +89,6 @@ def load_news_data(file_path):
         date_col = 'Dates'
 
     if date_col:
-        # Rename to a consistent 'Date' for merging
         df_news.rename(columns={date_col: 'Date'}, inplace=True)
         df_news["Date"] = pd.to_datetime(df_news["Date"], errors="coerce")
         df_news = df_news.dropna(subset=["Date"])
@@ -183,9 +182,30 @@ st.caption("Analysis of futures curves, spreads, and historical evolution.")
 tab1, tab2, tab3 = st.tabs(["Outright", "Spread and Fly", "Curve Animation"])
 
 with tab1:
-    # (Tab 1 remains unchanged)
     st.header(f"Curve Analysis for {single_date}")
-    # ... (rest of Tab 1 logic) ...
+    s1 = curve_for_date(work_df, contracts, single_date)
+    if s1 is None:
+        st.error("No data available for the chosen date.")
+    else:
+        st.markdown("##### Key Curve Metrics")
+        m_cols = st.columns(3)
+        if len(contracts) > 0: m_cols[0].metric(label=f"Prompt Price ({contracts[0]})", value=f"{s1.get(contracts[0], 0):.2f}")
+        if len(contracts) > 1: m_cols[1].metric(label=f"M1-M2 Spread ({contracts[0]}-{contracts[1]})", value=f"{s1[contracts[0]] - s1[contracts[1]]:.2f}")
+        if len(contracts) > 11: m_cols[2].metric(label=f"M1-M12 Spread ({contracts[0]}-{contracts[11]})", value=f"{s1[contracts[0]] - s1[contracts[11]]:.2f}")
+        
+        st.markdown("---")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("##### Single Date Curve")
+            fig_single = overlay_figure(contracts, {single_date: s1}, y_label=("Z-score" if normalize else "Last Price ($)"))
+            st.plotly_chart(fig_single, use_container_width=True, key=f"single_chart_{selected_symbol}")
+        with col2:
+            st.markdown("##### Multi-Date Overlay")
+            valid_curves = {d: s for d, s in {d: curve_for_date(work_df, contracts, d) for d in multi_dates}.items() if s is not None}
+            if not valid_curves: st.warning("No data found for any overlay dates.")
+            else:
+                fig_overlay = overlay_figure(contracts, valid_curves, y_label=("Z-score" if normalize else "Last Price ($)"))
+                st.plotly_chart(fig_overlay, use_container_width=True, key=f"multi_chart_{selected_symbol}")
 
 with tab2:
     st.header("Spread & Fly Time Series Analysis")
@@ -222,7 +242,6 @@ with tab2:
                     hovertext=price_hover_text, hoverinfo="text"
                 ))
 
-                # **FIX**: Robustly find news columns and create bubbles
                 if not df_news.empty:
                     news_cols = df_news.columns.drop('Date')
                     news_df_in_view = merged_df.dropna(subset=news_cols, how='all')
@@ -230,7 +249,7 @@ with tab2:
                     if not news_df_in_view.empty:
                         news_hover_text = news_df_in_view.apply(
                             lambda row: f"<b>Date:</b> {row['Date'].strftime('%Y-%m-%d')}<br><hr>" + 
-                                        "<br>".join(f"<b>{col}:</b> {row[col]}" for col in news_cols if pd.notna(row[col])),
+                                        "<br>".join(f"<b>{col.replace('_', ' ')}:</b> {row[col]}" for col in news_cols if pd.notna(row[col])),
                             axis=1
                         )
                         fig_spread.add_trace(go.Scatter(
@@ -245,7 +264,6 @@ with tab2:
             st.plotly_chart(fig_spread, use_container_width=True, key=f"spread_chart_{selected_symbol}")
 
     with sub_tab2:
-        # (Fly logic is now complete and follows the same pattern as Spread)
         st.markdown("**Compare Multiple Butterfly Spreads Over Time**")
         fly_type = st.radio("Fly construction method:", ["Auto (consecutive months)", "Manual selection"], index=0, horizontal=True, key=f"fly_type_{selected_symbol}")
         selected_flies = []
@@ -290,7 +308,7 @@ with tab2:
                     if not news_df_in_view.empty:
                         news_hover_text = news_df_in_view.apply(
                             lambda row: f"<b>Date:</b> {row['Date'].strftime('%Y-%m-%d')}<br><hr>" + 
-                                        "<br>".join(f"<b>{col}:</b> {row[col]}" for col in news_cols if pd.notna(row[col])),
+                                        "<br>".join(f"<b>{col.replace('_', ' ')}:</b> {row[col]}" for col in news_cols if pd.notna(row[col])),
                             axis=1
                         )
                         fly_values_news = news_df_in_view[f1] - 2 * news_df_in_view[f2] + news_df_in_view[f3]
@@ -305,9 +323,38 @@ with tab2:
             st.plotly_chart(fig_fly, use_container_width=True, key=f"fly_chart_{selected_symbol}")
 
 with tab3:
-    # (Tab 3 remains unchanged)
     st.header("Curve Evolution Animation")
-    # ... (rest of animation logic) ...
+    st.info("Use the slider or the 'Play' button to animate the daily changes in the forward curve.")
+    anim_df = work_df[["Date"] + contracts].copy().dropna(subset=contracts).reset_index(drop=True)
+    if not anim_df.empty:
+        fig_anim = go.Figure(
+            data=[go.Scatter(x=contracts, y=anim_df.loc[0, contracts], mode="lines+markers")],
+            layout=go.Layout(
+                title="Forward Curve Evolution",
+                xaxis_title="Contract", yaxis_title="Price ($)" if not normalize else "Z-score",
+                template="plotly_white", margin=dict(l=40, r=20, t=60, b=40),
+                updatemenus=[dict(
+                    type="buttons", showactive=False, y=1.15, x=1.05, xanchor="right", yanchor="top",
+                    buttons=[
+                        dict(label="Play", method="animate", args=[None, {"frame": {"duration": 50, "redraw": True}, "fromcurrent": True, "transition": {"duration": 0}}]),
+                        dict(label="Pause", method="animate", args=[[None], {"frame": {"duration": 0, "redraw": False}, "mode": "immediate"}])
+                    ]
+                )],
+                sliders=[dict(
+                    active=0, transition={"duration": 0}, currentvalue={"prefix": "Date: ", "font": {"size": 14}},
+                    steps=[dict(
+                        method="animate",
+                        args=[[str(d.date())], {"mode": "immediate", "frame": {"duration": 100, "redraw": True}, "transition": {"duration": 50}}],
+                        label=str(d.date())
+                    ) for d in anim_df["Date"]]
+                )]
+            ),
+            frames=[go.Frame(
+                data=[go.Scatter(x=contracts, y=anim_df.loc[i, contracts])],
+                name=str( anim_df.loc[i, "Date"].date() )
+            ) for i in range(len(anim_df))]
+        )
+        st.plotly_chart(fig_anim, use_container_width=True, key=f"anim_chart_{selected_symbol}")
 
 with st.expander("Preview Raw Data"):
     st.dataframe(df.head(25))

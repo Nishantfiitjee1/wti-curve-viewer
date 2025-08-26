@@ -93,6 +93,12 @@ def load_all_data():
     
     return all_product_data, df_news
 
+# **FIX**: Added the missing curve_for_date helper function
+def curve_for_date(df: pd.DataFrame, contracts, d: date) -> pd.Series | None:
+    """Extracts the curve data for a single date."""
+    row = df.loc[df["Date"].dt.date == d, contracts]
+    return row.iloc[0] if not row.empty else None
+
 def style_figure(fig, title):
     """Applies the custom dark theme styling to a Plotly figure."""
     fig.update_layout(
@@ -238,8 +244,3 @@ for i, symbol in enumerate(selected_products):
 
         fig_spread = style_figure(fig_spread, f"{symbol} M1-M2 Spread")
         st.plotly_chart(fig_spread, use_container_width=True)
-
-
-# --- Raw Data Preview ---
-with st.expander("Preview Raw Data"):
-    st.dataframe(df.head(25))

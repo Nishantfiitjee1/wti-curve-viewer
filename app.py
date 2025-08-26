@@ -11,17 +11,22 @@ from datetime import date, timedelta
 # ==================================================================================================
 st.set_page_config(page_title="Futures Dashboard", layout="wide", initial_sidebar_state="collapsed")
 
-# Professional Light Theme CSS for a clean, industry-standard look
+# Compact styling (buttons smaller, denser spacing)
 st.markdown(
     """
 <style>
     .stApp { background-color: #FFFFFF; color: #1E1E1E; }
-    .header { background-color: #F0F2F6; padding: 8px 15px; border-radius: 8px; margin-bottom: 25px; border: 1px solid #E0E0E0; }
-    h2 { color: #1E1E1E; border-bottom: 2px solid #00A8E8; padding-bottom: 10px; margin-top: 25px; font-size: 1.6rem; font-weight: bold; }
-    .stButton>button { border-radius: 5px; padding: 4px 10px; border: 1px solid #B0B0B0; background-color: #FFFFFF; color: #333; font-weight: 500; transition: all 0.2s; height: 32px; }
+    .header { background-color: #F0F2F6; padding: 6px 10px; border-radius: 6px; margin-bottom: 12px; border: 1px solid #E0E0E0; }
+    h2 { color: #1E1E1E; border-bottom: 2px solid #00A8E8; padding-bottom: 8px; margin-top: 16px; font-size: 1.3rem; font-weight: bold; }
+    .stButton>button { border-radius: 4px; padding: 2px 6px; border: 1px solid #B0B0B0; background-color: #FFFFFF; color: #333; font-weight: 500; transition: all 0.12s; height: 28px; font-size: 12px; }
     .stButton>button:hover { border-color: #00A8E8; color: #00A8E8; }
-    .stButton>button.selected { background-color: #00A8E8; color: white; border: 1px solid #00A8E8; }
-    .stDateInput { background-color: #FFFFFF; border-radius: 5px; }
+    .stDateInput { background-color: #FFFFFF; border-radius: 4px; }
+    /* Make checkboxes more compact */
+    div[data-testid="stCheckbox"] label { font-size: 12px; }
+    /* make multiselect/inputs compact */
+    .stMultiSelect, .stSelectbox, .stDateInput { font-size: 12px; }
+    /* tighten dataframe padding */
+    .element-container .stDataFrame { padding: 6px 6px 10px 6px; }
 </style>
 """,
     unsafe_allow_html=True,
@@ -33,7 +38,6 @@ st.markdown(
 MASTER_EXCEL_FILE = "Futures_Data.xlsx"
 NEWS_EXCEL_FILE = "Important_news_date.xlsx"
 
-# Configuration for each product, including sheet name and a unique color for charts
 PRODUCT_CONFIG = {
     "CL": {"name": "WTI Crude Oil", "sheet": "WTI_Outright", "color": "#0072B2"},
     "BZ": {"name": "Brent Crude Oil", "sheet": "Brent_outright", "color": "#D55E00"},
@@ -45,21 +49,13 @@ PRODUCT_CONFIG = {
 # ==================================================================================================
 @st.cache_data(show_spinner="Loading all market data...", ttl=3600)
 def load_all_data():
-    """
-    Loads all product data from the master Excel file and news data.
-    Returns: (all_product_data: dict, df_news: DataFrame)
-    all_product_data[symbol] = {"data": df (Date desc), "contracts": [M1, M2, ...]}
-    """
     all_product_data = {}
     if not os.path.exists(MASTER_EXCEL_FILE):
         return {}, pd.DataFrame()
 
     for symbol, config in PRODUCT_CONFIG.items():
         try:
-            df_raw = pd.read_excel(
-                MASTER_EXCEL_FILE, sheet_name=config["sheet"], header=None, engine="openpyxl"
-            )
-            # find header and data start rows based on the 'Dates' keyword in col 0
+            df_raw = pd.read_excel(MASTER_EXCEL_FILE, sheet_name=config["sheet"], header=None, engine="openpyxl")
             header_row_index = df_raw[df_raw[0] == "Dates"].index[0] - 1
             data_start_row_index = header_row_index + 2
 
@@ -72,7 +68,6 @@ def load_all_data():
 
             df = df_raw.iloc[data_start_row_index:].copy()
             df.columns = col_names
-
             df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
             for c in contracts:
                 df[c] = pd.to_numeric(df[c], errors="coerce")
@@ -90,21 +85,21 @@ def load_all_data():
         if date_col:
             news_df_raw.rename(columns={date_col: "Date"}, inplace=True)
             news_df_raw["Date"] = pd.to_datetime(news_df_raw["Date"], errors="coerce")
-            df_news = news_df_raw.dropna(subset=["Date"]).sort_values("Date")
+            df_news = news_df_raw.dropna(subset=["Date"]).sort_values("Date").reset_index(drop=True)
+
     return all_product_data, df_news
 
 
 def style_figure(fig: go.Figure, title: str) -> go.Figure:
-    """Applies the custom light theme styling to a Plotly figure for a professional look."""
     fig.update_layout(
-        title=dict(text=title, font=dict(color="#333", size=16), x=0.5, y=0.95),
+        title=dict(text=title, font=dict(color="#333", size=14), x=0.5, y=0.95),
         paper_bgcolor="rgba(255,255,255,1)",
-        plot_bgcolor="#F9F9F9",
-        xaxis=dict(color="#333", gridcolor="#EAEAEA", zeroline=False),
-        yaxis=dict(color="#333", gridcolor="#EAEAEA", zeroline=False),
-        legend=dict(font=dict(color="#333"), yanchor="top", y=0.99, xanchor="left", x=0.01),
+        plot_bgcolor="#0F0F0F",  # keep plot bg dark if you prefer; change to '#F9F9F9' for light
+        xaxis=dict(color="#DDD", gridcolor="#333", zeroline=False),
+        yaxis=dict(color="#DDD", gridcolor="#333", zeroline=False),
+        legend=dict(font=dict(color="#DDD"), yanchor="top", y=0.99, xanchor="left", x=0.01),
         hovermode="x unified",
-        margin=dict(l=50, r=20, t=60, b=50),
+        margin=dict(l=40, r=20, t=50, b=40),
     )
     return fig
 
@@ -114,7 +109,6 @@ def filter_by_date_window(df: pd.DataFrame, start_d: date, end_d: date) -> pd.Da
 
 
 def nearest_date_on_or_before(df: pd.DataFrame, target_d: date) -> date | None:
-    """Return the nearest available date (<= target) present in df['Date'] or None if none."""
     subset = df[df["Date"].dt.date <= target_d]
     if subset.empty:
         return None
@@ -122,29 +116,52 @@ def nearest_date_on_or_before(df: pd.DataFrame, target_d: date) -> date | None:
 
 
 def add_news_markers(fig: go.Figure, merged_df: pd.DataFrame, df_news: pd.DataFrame, y_series: pd.Series | None = None):
-    if df_news.empty:
+    """
+    Adds news markers to fig. Safe checks:
+     - If df_news is empty -> nothing added.
+     - If df_news has no non-Date columns -> nothing added.
+     - If merged_df doesn't contain the news columns, skip dropna and attempt to match by Date.
+    """
+    if df_news is None or df_news.empty:
         return fig
-    news_cols = df_news.columns.drop("Date")
-    news_df_in_view = merged_df.dropna(subset=news_cols, how="all")
+
+    # identify news columns besides 'Date'
+    news_cols = [c for c in df_news.columns if c != "Date"]
+    if not news_cols:
+        return fig
+
+    # if merged_df doesn't have news_cols, try to align on Date only:
+    if not set(news_cols).issubset(set(merged_df.columns)):
+        # fallback: try to join on Date from df_news to merged_df to get rows that have any news info
+        joined = pd.merge(merged_df, df_news, on="Date", how="left", suffixes=("", "_news"))
+        # if still no news columns, exit
+        if not any(col in joined.columns for col in news_cols):
+            return fig
+        news_df_in_view = joined.dropna(subset=news_cols, how="all")
+    else:
+        news_df_in_view = merged_df.dropna(subset=news_cols, how="all")
+
     if news_df_in_view.empty:
         return fig
+
     if y_series is None:
+        # set y positions as NaN so markers draw at baseline; callers can pass specific y_series
         y_series = pd.Series(index=news_df_in_view.index, dtype=float)
         y_series[:] = np.nan
+
     news_hover_text = news_df_in_view.apply(
         lambda row: f"<b>Date:</b> {row['Date'].strftime('%Y-%m-%d')}<br><hr>"
-        + "<br>".join(
-            f"<b>{col.replace('_', ' ')}:</b> {row[col]}" for col in news_cols if pd.notna(row[col])
-        ),
+        + "<br>".join(f"<b>{col.replace('_', ' ')}:</b> {row[col]}" for col in news_cols if pd.notna(row.get(col))),
         axis=1,
     )
+
     fig.add_trace(
         go.Scatter(
             x=news_df_in_view["Date"],
             y=y_series.loc[news_df_in_view.index] if y_series is not None else None,
             mode="markers",
             name="News",
-            marker=dict(size=9, color="#FF6B6B", symbol="circle"),
+            marker=dict(size=8, color="#FF6B6B", symbol="circle"),
             hovertext=news_hover_text,
             hoverinfo="text",
             showlegend=False,
@@ -174,8 +191,6 @@ if "current_view" not in st.session_state:
     st.session_state["current_view"] = "Curves"
 if "outright_dates" not in st.session_state:
     st.session_state["outright_dates"] = {}
-if "layout_cols" not in st.session_state:
-    st.session_state["layout_cols"] = 3
 
 # ==================================================================================================
 # 4. MAIN APP LOGIC AND LAYOUT
@@ -190,7 +205,7 @@ if not all_data:
 
 # ---------------------------- HEADER CONTROL PANEL ----------------------------
 st.markdown('<div class="header">', unsafe_allow_html=True)
-header_cols = st.columns([1.5, 3, 3, 1.2, 0.8])
+header_cols = st.columns([1.6, 3, 2.6, 1.2, 0.8])
 
 # --- View Selection ---
 with header_cols[0]:
@@ -200,17 +215,21 @@ with header_cols[0]:
         if st.button(view, key=f"btn_view_{view}", use_container_width=True):
             st.session_state.current_view = view
 
-# --- Product Selection Toggles ---
+# --- Product Selection (compact checkboxes that persist) ---
 with header_cols[1]:
     st.write("**Products**")
+    # show compact checkboxes in a row (wrap if many)
     prod_cols = st.columns(len(PRODUCT_CONFIG))
     for i, (symbol, config) in enumerate(PRODUCT_CONFIG.items()):
-        if prod_cols[i].button(symbol, key=f"btn_prod_{symbol}", use_container_width=True):
-            if symbol in st.session_state.selected_products:
-                if len(st.session_state.selected_products) > 1:
-                    st.session_state.selected_products.remove(symbol)
-            else:
-                st.session_state.selected_products.append(symbol)
+        key = f"chk_prod_{symbol}"
+        # initialize state if missing
+        if key not in st.session_state:
+            st.session_state[key] = symbol in st.session_state["selected_products"]
+        checked = prod_cols[i].checkbox(symbol, value=st.session_state[key], key=key)
+        st.session_state[key] = checked
+
+    # update selected_products from the checkboxes
+    st.session_state["selected_products"] = [s for s in PRODUCT_CONFIG.keys() if st.session_state.get(f"chk_prod_{s}", False)]
 
 # --- Date Pickers ---
 with header_cols[2]:
@@ -223,30 +242,18 @@ with header_cols[2]:
         "End Date", value=st.session_state.end_date, key="end_date_picker", label_visibility="collapsed"
     )
 
-# --- Layout & Actions ---
+# --- Actions ---
 with header_cols[3]:
-    st.write("**Layout**")
-    st.session_state.layout_cols = st.slider(
-        "Charts per row", min_value=1, max_value=4, value=st.session_state.layout_cols, key="cols_slider"
-    )
-
-with header_cols[4]:
     st.write("**Actions**")
     if st.button("Refresh", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
 
-# highlight selected buttons
+# visually highlight current view (still using CSS injection for button keys)
 for view in view_buttons:
     if st.session_state.current_view == view:
         st.markdown(
             f"<style>#root .stButton button[key='btn_view_{view}'] {{background-color: #00A8E8; color: white;}}</style>",
-            unsafe_allow_html=True,
-        )
-for symbol in PRODUCT_CONFIG:
-    if symbol in st.session_state.selected_products:
-        st.markdown(
-            f"<style>#root .stButton button[key='btn_prod_{symbol}'] {{background-color: #00A8E8; color: white;}}</style>",
             unsafe_allow_html=True,
         )
 
@@ -263,7 +270,7 @@ if st.session_state.current_view == "Curves":
     st.markdown("## Outright Curves – Select Dates & Compare")
 
     # Controls for outright dates
-    ctl_cols = st.columns([2, 2, 1, 1])
+    ctl_cols = st.columns([2.2, 2.2, 1, 1])
     with ctl_cols[0]:
         global_dates_mode = st.radio(
             "Date selection mode",
@@ -271,41 +278,40 @@ if st.session_state.current_view == "Curves":
             index=0,
             horizontal=True,
         )
+
+    # build aggregated list of available dates (safe: use .dt.date)
+    available_dates = set()
+    for s in st.session_state.selected_products:
+        df_s = all_data.get(s, {}).get("data")
+        if df_s is None or df_s.empty:
+            continue
+        # df_s["Date"].dt.date already yields python date objects or numpy dates — no .date() call needed
+        available_dates |= set(df_s["Date"].dt.date.dropna().unique())
+    all_dates = sorted(available_dates, reverse=True)
+
     with ctl_cols[1]:
         if global_dates_mode == "Pick one date":
-            # Aggregate all available dates across selected products
-            all_dates = sorted(
-                set(
-                    d.date()
-                    for s in st.session_state.selected_products
-                    for d in all_data[s]["data"]["Date"].dt.date.unique()
-                ),
-                reverse=True,
-            )
-            picked_one_date = st.date_input("Outright date", value=all_dates[0] if all_dates else date.today())
+            if all_dates:
+                picked_one_date = st.date_input("Outright date", value=all_dates[0], key="picked_one_date")
+            else:
+                picked_one_date = st.date_input("Outright date", value=date.today(), key="picked_one_date")
         elif global_dates_mode == "Pick multiple dates":
-            all_dates = sorted(
-                set(
-                    d.date()
-                    for s in st.session_state.selected_products
-                    for d in all_data[s]["data"]["Date"].dt.date.unique()
-                ),
-                reverse=True,
-            )
             picked_multi_dates = st.multiselect(
-                "Outright dates (overlay)", options=all_dates, default=all_dates[:3] if len(all_dates) >= 3 else all_dates
+                "Outright dates (overlay)", options=all_dates, default=all_dates[:3] if len(all_dates) >= 3 else all_dates, key="picked_multi_dates"
             )
+
     with ctl_cols[2]:
-        normalize_curves = st.checkbox("Normalize (z)" , value=False)
+        normalize_curves = st.checkbox("Normalize (z)", value=False)
     with ctl_cols[3]:
         show_values = st.checkbox("Show values", value=False)
 
-    # Render per-product charts in a grid
+    # Render per-product charts in an auto grid (up to 3 columns)
     prods = st.session_state.selected_products
-    rows = (len(prods) + st.session_state.layout_cols - 1) // st.session_state.layout_cols
+    cols_per_row = min(3, max(1, len(prods)))
+    rows = (len(prods) + cols_per_row - 1) // cols_per_row
     idx = 0
     for _ in range(rows):
-        cols = st.columns(st.session_state.layout_cols)
+        cols = st.columns(cols_per_row)
         for c in cols:
             if idx >= len(prods):
                 break
@@ -324,7 +330,7 @@ if st.session_state.current_view == "Curves":
                 d_use = nearest_date_on_or_before(df, picked_one_date)
                 sel_dates = [d_use] if d_use else []
             else:  # multi
-                sel_dates = [nearest_date_on_or_before(df, d) for d in picked_multi_dates]
+                sel_dates = [nearest_date_on_or_before(df, d) for d in picked_multi_dates] if picked_multi_dates else []
                 sel_dates = [d for d in sel_dates if d is not None]
 
             if not sel_dates:
@@ -346,7 +352,7 @@ if st.session_state.current_view == "Curves":
                         y=s.values,
                         mode="lines+markers",
                         name=str(d_plot),
-                        line=dict(color=PRODUCT_CONFIG[symbol]["color"], width=3),
+                        line=dict(color=PRODUCT_CONFIG[symbol]["color"], width=2.5),
                         text=[f"{val:.2f}" for val in s.values] if show_values else None,
                         textposition="top center" if show_values else None,
                     )
@@ -359,7 +365,6 @@ if st.session_state.current_view == "Curves":
     # ============================ SPREAD & FLY in Curves view ============================
     st.markdown("## Quick Spreads & Flies (per product)")
 
-    # quick selectors
     q1, q2 = st.columns(2)
     with q1:
         st.markdown("**Spreads**")
@@ -368,7 +373,6 @@ if st.session_state.current_view == "Curves":
             if len(contracts) < 2:
                 st.warning(f"{symbol}: not enough contracts for spreads")
                 continue
-            # default choices
             pairs = [f"{contracts[i]} - {contracts[i+1]}" for i in range(min(3, len(contracts)-1))]
             choices = st.multiselect(
                 f"{symbol} pairs",
@@ -384,16 +388,16 @@ if st.session_state.current_view == "Curves":
                     merged = pd.merge(sub, df_news, on="Date", how="left") if not df_news.empty else sub
                     fig = go.Figure()
                     for pair in choices:
-                        c1, c2 = [x.strip() for x in pair.split("-")]
-                        series = spread_series(merged, c1, c2)
+                        c1n, c2n = [x.strip() for x in pair.split("-")]
+                        series = spread_series(merged, c1n, c2n)
                         fig.add_trace(
                             go.Scatter(
                                 x=merged["Date"],
                                 y=series,
                                 mode="lines",
-                                name=f"{symbol} {c1}-{c2}",
+                                name=f"{symbol} {c1n}-{c2n}",
                                 hovertext=[
-                                    f"<b>Date:</b> {d.strftime('%Y-%m-%d')}<br><b>{c1}-{c2}:</b> {v:.2f}"
+                                    f"<b>Date:</b> {d.strftime('%Y-%m-%d')}<br><b>{c1n}-{c2n}:</b> {v:.2f}"
                                     for d, v in zip(merged["Date"], series)
                                 ],
                                 hoverinfo="text",
@@ -459,7 +463,6 @@ if st.session_state.current_view == "Curves":
 elif st.session_state.current_view == "Compare":
     st.markdown("## Cross-Product Compare – Spreads & Flies")
 
-    # Build selectable universe of series across products
     universe_spreads = []
     universe_flies = []
     for symbol in st.session_state.selected_products:
@@ -481,66 +484,71 @@ elif st.session_state.current_view == "Compare":
         sel_spreads = st.multiselect(
             "Select spreads to compare",
             options=universe_spreads,
-            default=[s for s in universe_spreads if ": " in s][:4],
+            default=universe_spreads[:4] if universe_spreads else [],
+            key="sel_spreads"
         )
     with c2:
         sel_flies = st.multiselect(
             "Select flies to compare",
             options=universe_flies,
-            default=[f for f in universe_flies if ": " in f][:3],
+            default=universe_flies[:3] if universe_flies else [],
+            key="sel_flies"
         )
 
     normalize_ts = st.checkbox("Normalize time series (z per series)", value=False)
 
-    # Time range subset per product
     def norm_series(s: pd.Series) -> pd.Series:
         std = s.std()
         return (s - s.mean()) / (std if std not in (0, np.nan) else 1)
 
-    # One combined chart for spreads
     if sel_spreads:
         figS = go.Figure()
+        last_sub = pd.DataFrame()
         for item in sel_spreads:
-            sym, pair = item.split(":")
+            try:
+                sym, pair = item.split(":")
+            except ValueError:
+                continue
             sym = sym.strip()
             c1x, c2x = [p.strip() for p in pair.split("-")]
             df = all_data[sym]["data"]
             sub = filter_by_date_window(df, st.session_state.start_date, st.session_state.end_date)
+            last_sub = sub
             if sub.empty:
                 continue
             series = spread_series(sub, c1x, c2x)
             if normalize_ts:
                 series = norm_series(series)
             figS.add_trace(
-                go.Scatter(
-                    x=sub["Date"], y=series, mode="lines", name=f"{sym} {c1x}-{c2x}", line=dict(width=2)
-                )
+                go.Scatter(x=sub["Date"], y=series, mode="lines", name=f"{sym} {c1x}-{c2x}", line=dict(width=2))
             )
-        add_news_markers(figS, sub if not sub.empty else pd.DataFrame(), df_news)
+        add_news_markers(figS, last_sub if not last_sub.empty else pd.DataFrame(), df_news)
         figS = style_figure(figS, "Selected Spreads – Cross Product")
         figS.update_yaxes(title_text=("Z" if normalize_ts else "Price Diff ($)"))
         st.plotly_chart(figS, use_container_width=True, config={"displayModeBar": False})
 
-    # One combined chart for flies
     if sel_flies:
         figF = go.Figure()
+        last_sub = pd.DataFrame()
         for item in sel_flies:
-            sym, trip = item.split(":")
+            try:
+                sym, trip = item.split(":")
+            except ValueError:
+                continue
             sym = sym.strip()
             a, b, c = [p.strip() for p in trip.split("-")]
             df = all_data[sym]["data"]
             sub = filter_by_date_window(df, st.session_state.start_date, st.session_state.end_date)
+            last_sub = sub
             if sub.empty:
                 continue
             series = fly_series(sub, a, b, c)
             if normalize_ts:
                 series = norm_series(series)
             figF.add_trace(
-                go.Scatter(
-                    x=sub["Date"], y=series, mode="lines", name=f"{sym} {a}-{b}-{c}", line=dict(width=2)
-                )
+                go.Scatter(x=sub["Date"], y=series, mode="lines", name=f"{sym} {a}-{b}-{c}", line=dict(width=2))
             )
-        add_news_markers(figF, sub if not sub.empty else pd.DataFrame(), df_news)
+        add_news_markers(figF, last_sub if not last_sub.empty else pd.DataFrame(), df_news)
         figF = style_figure(figF, "Selected Flies – Cross Product")
         figF.update_yaxes(title_text=("Z" if normalize_ts else "Price Diff ($)"))
         st.plotly_chart(figF, use_container_width=True, config={"displayModeBar": False})
@@ -569,8 +577,7 @@ elif st.session_state.current_view == "Workspace":
     st.markdown("## Trader Workspace – Outrights, Spreads, Flies at a glance")
 
     prods = st.session_state.selected_products
-    cols_per_row = st.session_state.layout_cols
-
+    cols_per_row = min(3, max(1, len(prods)))  # auto-adjust columns
     # Row 1: Latest Outrights for each product (auto date <= end_date)
     st.markdown("### Latest Outrights (by product)")
     idx = 0
@@ -595,7 +602,7 @@ elif st.session_state.current_view == "Workspace":
             fig = go.Figure()
             fig.add_trace(
                 go.Scatter(
-                    x=contracts, y=s.values, mode="lines+markers", name=str(d_use), line=dict(color=PRODUCT_CONFIG[symbol]["color"], width=3)
+                    x=contracts, y=s.values, mode="lines+markers", name=str(d_use), line=dict(color=PRODUCT_CONFIG[symbol]["color"], width=2.5)
                 )
             )
             fig = style_figure(fig, f"{symbol} Outright ({d_use})")
@@ -606,11 +613,13 @@ elif st.session_state.current_view == "Workspace":
     st.markdown("### M1-M2 Spreads – Cross Product")
     figS = go.Figure()
     any_added = False
+    last_sub = pd.DataFrame()
     for symbol in prods:
         df, contracts = all_data[symbol]["data"], all_data[symbol]["contracts"]
         if len(contracts) < 2:
             continue
         sub = filter_by_date_window(df, st.session_state.start_date, st.session_state.end_date)
+        last_sub = sub
         if sub.empty:
             continue
         series = spread_series(sub, contracts[0], contracts[1])
@@ -619,7 +628,7 @@ elif st.session_state.current_view == "Workspace":
         )
         any_added = True
     if any_added:
-        add_news_markers(figS, sub if not sub.empty else pd.DataFrame(), df_news)
+        add_news_markers(figS, last_sub if not last_sub.empty else pd.DataFrame(), df_news)
         figS = style_figure(figS, "M1-M2 – All Selected Products")
         figS.update_yaxes(title_text="Price Diff ($)")
         st.plotly_chart(figS, use_container_width=True, config={"displayModeBar": False})
@@ -630,11 +639,13 @@ elif st.session_state.current_view == "Workspace":
     st.markdown("### M1-M2-M3 Flies – Cross Product")
     figF = go.Figure()
     any_added = False
+    last_sub = pd.DataFrame()
     for symbol in prods:
         df, contracts = all_data[symbol]["data"], all_data[symbol]["contracts"]
         if len(contracts) < 3:
             continue
         sub = filter_by_date_window(df, st.session_state.start_date, st.session_state.end_date)
+        last_sub = sub
         if sub.empty:
             continue
         series = fly_series(sub, contracts[0], contracts[1], contracts[2])
@@ -643,7 +654,7 @@ elif st.session_state.current_view == "Workspace":
         )
         any_added = True
     if any_added:
-        add_news_markers(figF, sub if not sub.empty else pd.DataFrame(), df_news)
+        add_news_markers(figF, last_sub if not last_sub.empty else pd.DataFrame(), df_news)
         figF = style_figure(figF, "M1-M2-M3 – All Selected Products")
         figF.update_yaxes(title_text="Price Diff ($)")
         st.plotly_chart(figF, use_container_width=True, config={"displayModeBar": False})

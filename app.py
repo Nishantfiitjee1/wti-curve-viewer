@@ -11,7 +11,7 @@ from datetime import date, timedelta
 # ==================================================================================================
 st.set_page_config(page_title="Futures Dashboard", layout="wide", initial_sidebar_state="collapsed")
 
-# Professional Light Theme CSS
+# Professional Light Theme CSS for a clean, industry-standard look
 st.markdown("""
 <style>
     /* Main app styling for light theme */
@@ -39,12 +39,13 @@ st.markdown("""
     /* Custom button styling for product/view selection */
     .stButton>button {
         border-radius: 5px;
-        padding: 5px 12px;
+        padding: 4px 10px; /* Made buttons smaller */
         border: 1px solid #B0B0B0;
         background-color: #FFFFFF;
         color: #333;
         font-weight: 500;
         transition: all 0.2s;
+        height: 32px; /* Fixed height for alignment */
     }
     .stButton>button:hover {
         border-color: #00A8E8;
@@ -60,6 +61,10 @@ st.markdown("""
     .stDateInput {
         background-color: #FFFFFF;
         border-radius: 5px;
+    }
+    /* Align header elements vertically */
+    .st-emotion-cache-1f8336m {
+        align-items: end;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -130,7 +135,7 @@ def load_all_data():
 def style_figure(fig, title):
     """Applies the custom light theme styling to a Plotly figure for a professional look."""
     fig.update_layout(
-        title=dict(text=title, font=dict(color='#333', size=18), x=0.5, y=0.95),
+        title=dict(text=title, font=dict(color='#333', size=16), x=0.5, y=0.95),
         paper_bgcolor='rgba(255,255,255,1)',
         plot_bgcolor='#F9F9F9',
         xaxis=dict(color='#333', gridcolor='#EAEAEA', zeroline=False),
@@ -146,7 +151,7 @@ def style_figure(fig, title):
 # ==================================================================================================
 # Using st.session_state to keep track of user selections across reruns.
 if 'selected_products' not in st.session_state:
-    st.session_state['selected_products'] = ["CL", "BZ"] # Default selection on first run
+    st.session_state['selected_products'] = ["CL", "BZ", "DBI"] # Default selection on first run
 if 'start_date' not in st.session_state:
     st.session_state['start_date'] = date.today() - timedelta(days=365)
 if 'end_date' not in st.session_state:
@@ -166,7 +171,7 @@ if not all_data:
 
 # ---------------------------- HEADER CONTROL PANEL ----------------------------
 st.markdown('<div class="header">', unsafe_allow_html=True)
-header_cols = st.columns([1.5, 3, 2.5, 1])
+header_cols = st.columns([1.5, 3, 3, 1])
 
 # --- View Selection ---
 with header_cols[0]:
@@ -192,13 +197,13 @@ with header_cols[1]:
 with header_cols[2]:
     st.write("**Date Range**")
     date_cols = st.columns(2)
-    st.session_state.start_date = date_cols[0].date_input("Start", value=st.session_state.start_date, key="start_date_picker", label_visibility="collapsed")
-    st.session_state.end_date = date_cols[1].date_input("End", value=st.session_state.end_date, key="end_date_picker", label_visibility="collapsed")
+    st.session_state.start_date = date_cols[0].date_input("Start Date", value=st.session_state.start_date, key="start_date_picker", label_visibility="collapsed")
+    st.session_state.end_date = date_cols[1].date_input("End Date", value=st.session_state.end_date, key="end_date_picker", label_visibility="collapsed")
 
 # --- Actions ---
 with header_cols[3]:
     st.write("**Actions**")
-    if st.button("Refresh Data", use_container_width=True):
+    if st.button("Refresh", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
 
@@ -232,6 +237,7 @@ if st.session_state.current_view == "Curves":
             if not product_data: continue
             df, contracts = product_data["data"], product_data["contracts"]
             
+            # Find the most recent date available within the selected end_date
             latest_date_in_range = df[df['Date'].dt.date <= st.session_state.end_date]['Date'].max().date()
             curve_data = df[df['Date'].dt.date == latest_date_in_range].iloc[0]
 
@@ -330,4 +336,3 @@ elif st.session_state.current_view == "Table":
 elif st.session_state.current_view == "Strategy":
     st.markdown("## Strategy Backtesting")
     st.info("This section is under development. Strategy backtesting and analysis tools will be available here in a future version.")
-

@@ -42,11 +42,9 @@ div.stButton > button {
 
 
 # ---------------------------- 1. CENTRAL FILE & PRODUCT CONFIGURATION ----------------------------
-# Define the two master Excel files that run in the background.
 MASTER_EXCEL_FILE = "Futures_Data.xlsx"
 OPEC_EXCEL_FILE = "opec_meeting_date.xlsx"
 
-# This configuration is now case-insensitive because of the code fix below.
 PRODUCT_CONFIG = {
     "CL": {"name": "WTI Crude Oil", "sheet": "WTI"},
     "BZ": {"name": "Brent Crude Oil", "sheet": "Brent"},
@@ -59,32 +57,34 @@ PRODUCT_CONFIG = {
 def load_product_data(file_path, sheet_name):
     """Loads and parses futures data from a specific sheet in the master Excel file."""
     df_raw = pd.read_excel(file_path, sheet_name=sheet_name, header=None, engine="openpyxl")
-    
-    # Find the row with contract names (e.g., CL1 Comdty)
     header_row_index = 0
     contracts = [str(x).strip() for x in df_raw.iloc[header_row_index].tolist()[1:] if pd.notna(x) and str(x).strip() != ""]
-    
-    # Find the row where data starts (the one after "Dates")
     data_start_row_index = df_raw[df_raw[0] == 'Dates'].index[0] + 1
-
     col_names = ["Date"] + contracts
     df = df_raw.iloc[data_start_row_index:].copy()
     df.columns = col_names
-    
     df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
     for c in contracts:
         df[c] = pd.to_numeric(df[c], errors="coerce")
-        
     df = df.dropna(subset=["Date"]).sort_values("Date").reset_index(drop=True)
     return df, contracts
 
 @st.cache_data(show_spinner="Loading OPEC data...", ttl=3600)
 def load_opec_dates(file_path):
-    """Loads OPEC decision dates from the OPEC Excel file."""
+    """
+    Loads OPEC decision dates and intelligently shifts weekend dates to the next weekday.
+    """
     df_opec = pd.read_excel(file_path, engine="openpyxl")
     if 'Date' in df_opec.columns:
         df_opec["Date"] = pd.to_datetime(df_opec["Date"], errors="coerce")
         df_opec = df_opec.dropna(subset=["Date"])
+
+        # --- NEW: Weekend Correction Logic ---
+        # Monday is 0, Sunday is 6. pd.Timestamp.weekday
+        # If Saturday (5), add 2 days. If Sunday (6), add 1 day.
+        df_opec['Date'] = df_opec['Date'].apply(
+            lambda d: d + timedelta(days=2) if d.weekday() == 5 else (d + timedelta(days=1) if d.weekday() == 6 else d)
+        )
         return df_opec
     else:
         st.warning("The OPEC file must contain a 'Date' column.")
@@ -212,7 +212,7 @@ with tab2:
 
     opec_cols = df_opec.columns.drop("Date") if not df_opec.empty else []
     merged_df['OPEC_Info'] = merged_df.apply(
-        lambda row: "<br>".join(f"<b>{col}:</b> {row[col]}" for col in opec_cols if pd.notna(row[col])),
+        lambda row: "<br>".join(f"<b>{col.replace('_', ' ')}:</b> {row[col]}" for col in opec_cols if pd.notna(row[col])),
         axis=1
     )
 

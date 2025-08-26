@@ -21,11 +21,8 @@ st.markdown(
     .stButton>button { border-radius: 4px; padding: 2px 6px; border: 1px solid #B0B0B0; background-color: #FFFFFF; color: #333; font-weight: 500; transition: all 0.12s; height: 28px; font-size: 12px; }
     .stButton>button:hover { border-color: #00A8E8; color: #00A8E8; }
     .stDateInput { background-color: #FFFFFF; border-radius: 4px; }
-    /* Make checkboxes more compact */
     div[data-testid="stCheckbox"] label { font-size: 12px; }
-    /* make multiselect/inputs compact */
     .stMultiSelect, .stSelectbox, .stDateInput { font-size: 12px; }
-    /* tighten dataframe padding */
     .element-container .stDataFrame { padding: 6px 6px 10px 6px; }
 </style>
 """,
@@ -94,7 +91,7 @@ def style_figure(fig: go.Figure, title: str) -> go.Figure:
     fig.update_layout(
         title=dict(text=title, font=dict(color="#333", size=14), x=0.5, y=0.95),
         paper_bgcolor="rgba(255,255,255,1)",
-        plot_bgcolor="#0F0F0F",  # keep plot bg dark if you prefer; change to '#F9F9F9' for light
+        plot_bgcolor="#0F0F0F",
         xaxis=dict(color="#DDD", gridcolor="#333", zeroline=False),
         yaxis=dict(color="#DDD", gridcolor="#333", zeroline=False),
         legend=dict(font=dict(color="#DDD"), yanchor="top", y=0.99, xanchor="left", x=0.01),
@@ -115,39 +112,21 @@ def nearest_date_on_or_before(df: pd.DataFrame, target_d: date) -> date | None:
     return subset["Date"].max().date()
 
 
-def add_news_markers(fig: go.Figure, merged_df: pd.DataFrame, df_news: pd.DataFrame, y_series: pd.Series | None = None):
-    """
-    Adds news markers to fig. Safe checks:
-     - If df_news is empty -> nothing added.
-     - If df_news has no non-Date columns -> nothing added.
-     - If merged_df doesn't contain the news columns, skip dropna and attempt to match by Date.
-    """
+def add_news_markers(fig: go.Figure, merged_df: pd.DataFrame, df_news: pd.DataFrame, y_series: pd.Series):
     if df_news is None or df_news.empty:
         return fig
 
-    # identify news columns besides 'Date'
     news_cols = [c for c in df_news.columns if c != "Date"]
     if not news_cols:
         return fig
 
-    # if merged_df doesn't have news_cols, try to align on Date only:
-    if not set(news_cols).issubset(set(merged_df.columns)):
-        # fallback: try to join on Date from df_news to merged_df to get rows that have any news info
-        joined = pd.merge(merged_df, df_news, on="Date", how="left", suffixes=("", "_news"))
-        # if still no news columns, exit
-        if not any(col in joined.columns for col in news_cols):
-            return fig
-        news_df_in_view = joined.dropna(subset=news_cols, how="all")
-    else:
-        news_df_in_view = merged_df.dropna(subset=news_cols, how="all")
-
+    existing_news_cols = [col for col in news_cols if col in merged_df.columns]
+    if not existing_news_cols:
+        return fig
+        
+    news_df_in_view = merged_df.dropna(subset=existing_news_cols, how="all")
     if news_df_in_view.empty:
         return fig
-
-    if y_series is None:
-        # set y positions as NaN so markers draw at baseline; callers can pass specific y_series
-        y_series = pd.Series(index=news_df_in_view.index, dtype=float)
-        y_series[:] = np.nan
 
     news_hover_text = news_df_in_view.apply(
         lambda row: f"<b>Date:</b> {row['Date'].strftime('%Y-%m-%d')}<br><hr>"
@@ -158,12 +137,10 @@ def add_news_markers(fig: go.Figure, merged_df: pd.DataFrame, df_news: pd.DataFr
     fig.add_trace(
         go.Scatter(
             x=news_df_in_view["Date"],
-            y=y_series.loc[news_df_in_view.index] if y_series is not None else None,
-            mode="markers",
-            name="News",
+            y=y_series.loc[news_df_in_view.index],
+            mode="markers", name="News",
             marker=dict(size=8, color="#FF6B6B", symbol="circle"),
-            hovertext=news_hover_text,
-            hoverinfo="text",
+            hovertext=news_hover_text, hoverinfo="text",
             showlegend=False,
         )
     )
@@ -177,6 +154,12 @@ def spread_series(df: pd.DataFrame, c1: str, c2: str) -> pd.Series:
 def fly_series(df: pd.DataFrame, f1: str, f2: str, f3: str) -> pd.Series:
     return df[f1] - 2 * df[f2] + df[f3]
 
+# --- **FIX**: Callback function to safely update the selected products list ---
+def update_selected_products():
+    """Reads the state of all product checkboxes and updates the master list."""
+    st.session_state["selected_products"] = [
+        s for s in PRODUCT_CONFIG.keys() if st.session_state.get(f"chk_prod_{s}", False)
+    ]
 
 # ==================================================================================================
 # 3. STATE MANAGEMENT INITIALIZATION
@@ -189,8 +172,6 @@ if "end_date" not in st.session_state:
     st.session_state["end_date"] = date.today()
 if "current_view" not in st.session_state:
     st.session_state["current_view"] = "Curves"
-if "outright_dates" not in st.session_state:
-    st.session_state["outright_dates"] = {}
 
 # ==================================================================================================
 # 4. MAIN APP LOGIC AND LAYOUT
@@ -207,7 +188,6 @@ if not all_data:
 st.markdown('<div class="header">', unsafe_allow_html=True)
 header_cols = st.columns([1.6, 3, 2.6, 1.2, 0.8])
 
-# --- View Selection ---
 with header_cols[0]:
     st.write("**Views**")
     view_buttons = ["Curves", "Compare", "Table", "Workspace"]
@@ -215,47 +195,39 @@ with header_cols[0]:
         if st.button(view, key=f"btn_view_{view}", use_container_width=True):
             st.session_state.current_view = view
 
-# --- Product Selection (compact checkboxes that persist) ---
 with header_cols[1]:
     st.write("**Products**")
-    # show compact checkboxes in a row (wrap if many)
     prod_cols = st.columns(len(PRODUCT_CONFIG))
     for i, (symbol, config) in enumerate(PRODUCT_CONFIG.items()):
         key = f"chk_prod_{symbol}"
-        # initialize state if missing
+        # Initialize state if missing
         if key not in st.session_state:
             st.session_state[key] = symbol in st.session_state["selected_products"]
-        checked = prod_cols[i].checkbox(symbol, value=st.session_state[key], key=key)
-        st.session_state[key] = checked
+        
+        # **FIX**: Use the on_change callback instead of direct assignment
+        prod_cols[i].checkbox(
+            symbol,
+            value=st.session_state[key],
+            key=key,
+            on_change=update_selected_products
+        )
 
-    # update selected_products from the checkboxes
-    st.session_state["selected_products"] = [s for s in PRODUCT_CONFIG.keys() if st.session_state.get(f"chk_prod_{s}", False)]
-
-# --- Date Pickers ---
 with header_cols[2]:
     st.write("**Date Range**")
     date_cols = st.columns(2)
-    st.session_state.start_date = date_cols[0].date_input(
-        "Start Date", value=st.session_state.start_date, key="start_date_picker", label_visibility="collapsed"
-    )
-    st.session_state.end_date = date_cols[1].date_input(
-        "End Date", value=st.session_state.end_date, key="end_date_picker", label_visibility="collapsed"
-    )
+    st.session_state.start_date = date_cols[0].date_input("Start Date", value=st.session_state.start_date, key="start_date_picker", label_visibility="collapsed")
+    st.session_state.end_date = date_cols[1].date_input("End Date", value=st.session_state.end_date, key="end_date_picker", label_visibility="collapsed")
 
-# --- Actions ---
 with header_cols[3]:
     st.write("**Actions**")
     if st.button("Refresh", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
 
-# visually highlight current view (still using CSS injection for button keys)
+# Visually highlight current view button
 for view in view_buttons:
     if st.session_state.current_view == view:
-        st.markdown(
-            f"<style>#root .stButton button[key='btn_view_{view}'] {{background-color: #00A8E8; color: white;}}</style>",
-            unsafe_allow_html=True,
-        )
+        st.markdown(f"<style>#root .stButton button[key='btn_view_{view}'] {{background-color: #00A8E8; color: white;}}</style>", unsafe_allow_html=True)
 
 st.markdown("</div>", unsafe_allow_html=True)
 

@@ -41,11 +41,12 @@ div.stButton > button {
 """, unsafe_allow_html=True)
 
 
-# ---------------------------- 1. CENTRAL FILE & PRODUCT CONFIGURATION ----------------------------
+# ---------------------------- 1. CENTRAL PRODUCT CONFIGURATION ----------------------------
+# Define the single master Excel file.
 MASTER_EXCEL_FILE = "Futures_Data.xlsx"
-NEWS_EXCEL_FILE = "Important_news_date.xlsx"
 
-# Using the simplified sheet names as planned
+# **FIX**: Cleaned up the config to only include products present in your Excel file.
+# Ensured sheet names match your file information exactly.
 PRODUCT_CONFIG = {
     "CL": {"name": "WTI Crude Oil", "sheet": "WTI_Outright"},
     "BZ": {"name": "Brent Crude Oil", "sheet": "Brent_outright"},
@@ -53,50 +54,21 @@ PRODUCT_CONFIG = {
 }
 
 
-
 # ---------------------------- Data Loading & Utilities ----------------------------
 @st.cache_data(show_spinner="Loading product data...", ttl=3600)
 def load_product_data(file_path, sheet_name):
     """Loads and parses futures data from a specific sheet in the master Excel file."""
     df_raw = pd.read_excel(file_path, sheet_name=sheet_name, header=None, engine="openpyxl")
-    
-    # This part is now smarter: It finds the row with "Dates" in the first column
-    # to correctly locate your headers and the start of your data.
-    header_row_index = df_raw[df_raw[0] == 'Dates'].index[0] - 1
-    data_start_row_index = header_row_index + 2
-
-    contracts = [str(x).strip() for x in df_raw.iloc[header_row_index].tolist()[1:] if pd.notna(x) and str(x).strip() != ""]
+    hdr0 = df_raw.iloc[0].tolist()
+    contracts = [str(x).strip() for x in hdr0[1:] if pd.notna(x) and str(x).strip() != ""]
     col_names = ["Date"] + contracts
-    
-    df = df_raw.iloc[data_start_row_index:].copy()
+    df = df_raw.iloc[2:].copy()
     df.columns = col_names
-    
     df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
     for c in contracts:
         df[c] = pd.to_numeric(df[c], errors="coerce")
-        
     df = df.dropna(subset=["Date"]).sort_values("Date").reset_index(drop=True)
     return df, contracts
-
-@st.cache_data(show_spinner="Loading news data...", ttl=3600)
-def load_news_data(file_path):
-    """Loads news data and handles 'Date' vs 'Dates' column names."""
-    df_news = pd.read_excel(file_path, engine="openpyxl")
-    
-    date_col = None
-    if 'Date' in df_news.columns:
-        date_col = 'Date'
-    elif 'Dates' in df_news.columns:
-        date_col = 'Dates'
-
-    if date_col:
-        df_news.rename(columns={date_col: 'Date'}, inplace=True)
-        df_news["Date"] = pd.to_datetime(df_news["Date"], errors="coerce")
-        df_news = df_news.dropna(subset=["Date"])
-        return df_news
-    else:
-        st.warning("The news file must contain a 'Date' or 'Dates' column.")
-        return pd.DataFrame()
 
 def curve_for_date(df: pd.DataFrame, contracts, d: date) -> pd.Series | None:
     row = df.loc[df["Date"].dt.date == d, contracts]
@@ -137,32 +109,39 @@ target_sheet_name_from_config = selected_product_info["sheet"]
 st.title(f"{selected_product_info['name']} Curve Viewer")
 
 if not os.path.exists(MASTER_EXCEL_FILE):
-    st.error(f"Master data file not found: `{MASTER_EXCEL_FILE}`. Please ensure it is in the same directory.")
+    st.error(f"Master data file not found: `{MASTER_EXCEL_FILE}`. Please ensure the file is in the same directory.")
     st.stop()
 
-if os.path.exists(NEWS_EXCEL_FILE):
-    df_news = load_news_data(NEWS_EXCEL_FILE)
-else:
-    st.sidebar.warning(f"News file (`{NEWS_EXCEL_FILE}`) not found. Hover data will not be available.")
-    df_news = pd.DataFrame()
-
+# --- Robust sheet name checking (case and space insensitive) ---
 try:
     excel_file_handler = pd.ExcelFile(MASTER_EXCEL_FILE)
     excel_sheets = excel_file_handler.sheet_names
-    cleaned_target_sheet = target_sheet_name_from_config.strip().lower()
-    actual_sheet_to_load = next((s for s in excel_sheets if s.strip().lower() == cleaned_target_sheet), None)
     
+    cleaned_target_sheet = target_sheet_name_from_config.strip().lower()
+    actual_sheet_to_load = None
+    
+    for sheet in excel_sheets:
+        if sheet.strip().lower() == cleaned_target_sheet:
+            actual_sheet_to_load = sheet
+            break
+            
     if actual_sheet_to_load is None:
         st.caption("Analysis of futures curves, spreads, and historical evolution.")
-        st.markdown(f'<div class="placeholder-text">Data for {selected_product_info["name"]} is not yet available.<br>Sheet `{target_sheet_name_from_config}` not found.</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="placeholder-text">Data for {selected_product_info["name"]} is not yet available.<br>Sheet `{target_sheet_name_from_config}` not found in the Excel file.</div>', unsafe_allow_html=True)
         st.stop()
         
-    df, contracts = load_product_data(MASTER_EXCEL_FILE, actual_sheet_to_load)
-
 except Exception as e:
-    st.error(f"Could not read the data. Error: {e}")
+    st.error(f"Could not read the master Excel file. Error: {e}")
     st.stop()
 
+# --- If checks pass, load the data and build the dashboard ---
+try:
+    df, contracts = load_product_data(MASTER_EXCEL_FILE, actual_sheet_to_load)
+except Exception as e:
+    st.error(f"An error occurred while loading the data from sheet `{actual_sheet_to_load}`: {e}")
+    st.stop()
+
+# --- Sidebar Date Controls ---
 st.sidebar.header("Date Selection")
 all_dates = sorted(df["Date"].dt.date.unique().tolist(), reverse=True)
 max_d, min_d = all_dates[0], all_dates[-1]
@@ -174,11 +153,13 @@ st.sidebar.header("Display Options")
 normalize = st.sidebar.checkbox("Normalize curves (z-score)", key=f"normalize_{selected_symbol}")
 do_export = st.sidebar.checkbox("Enable CSV export", key=f"export_{selected_symbol}")
 
+# --- Data Preparation ---
 work_df = df.copy()
 if normalize:
     vals = work_df[contracts].astype(float)
     work_df[contracts] = (vals - vals.mean(axis=1).values[:, None]) / vals.std(axis=1).values[:, None]
 
+# --- Main UI Tabs ---
 st.caption("Analysis of futures curves, spreads, and historical evolution.")
 tab1, tab2, tab3 = st.tabs(["Outright", "Spread and Fly", "Curve Animation"])
 
@@ -211,58 +192,33 @@ with tab1:
 with tab2:
     st.header("Spread & Fly Time Series Analysis")
     selected_range = st.selectbox("Select date range for analysis", ["Full History", "Last 1 Year", "Last 6 Months", "Last 1 Month", "Last 2 Weeks", "Last 1 Week"], index=1, key=f"range_{selected_symbol}")
-    
     filtered_df = filter_dates(work_df, selected_range)
-    if not df_news.empty:
-        merged_df = pd.merge(filtered_df, df_news, on="Date", how="left")
-    else:
-        merged_df = filtered_df.copy()
-
     sub_tab1, sub_tab2 = st.tabs(["Spread Analysis", "Fly Analysis"])
 
     with sub_tab1:
         st.markdown("**Compare Multiple Spreads Over Time**")
         default_spread = [f"{contracts[0]} - {contracts[1]}"] if len(contracts) > 1 else []
-        spread_pairs = st.multiselect("Select contract pairs", options=[f"{c1} - {c2}" for i, c1 in enumerate(contracts) for c2 in contracts[i+1:]], default=default_spread, key=f"spread_pairs_{selected_symbol}")
-        
+        spread_pairs = st.multiselect(
+            "Select contract pairs",
+            options=[f"{c1} - {c2}" for i, c1 in enumerate(contracts) for c2 in contracts[i+1:]],
+            default=default_spread, key=f"spread_pairs_{selected_symbol}"
+        )
         if spread_pairs:
             fig_spread = go.Figure()
-            for pair in spread_pairs:
+            stats_cols = st.columns(len(spread_pairs))
+            csv_data = {"Date": filtered_df["Date"].dt.date}
+            for i, pair in enumerate(spread_pairs):
                 c1, c2 = [x.strip() for x in pair.split("-")]
-                
-                price_hover_text = [
-                    f"<b>Date:</b> {d.strftime('%Y-%m-%d')}<br>"
-                    f"<b>{c1}:</b> {p1:.2f}<br>"
-                    f"<b>{c2}:</b> {p2:.2f}<br>"
-                    f"<b>Spread ({c1}-{c2}):</b> {s:.2f}"
-                    for d, p1, p2, s in zip(merged_df['Date'], merged_df[c1], merged_df[c2], merged_df[c1] - merged_df[c2])
-                ]
-                fig_spread.add_trace(go.Scatter(
-                    x=merged_df["Date"], y=merged_df[c1] - merged_df[c2], 
-                    mode="lines", name=f"{c1}-{c2}",
-                    hovertext=price_hover_text, hoverinfo="text"
-                ))
-
-                if not df_news.empty:
-                    news_cols = df_news.columns.drop('Date')
-                    news_df_in_view = merged_df.dropna(subset=news_cols, how='all')
-                    
-                    if not news_df_in_view.empty:
-                        news_hover_text = news_df_in_view.apply(
-                            lambda row: f"<b>Date:</b> {row['Date'].strftime('%Y-%m-%d')}<br><hr>" + 
-                                        "<br>".join(f"<b>{col.replace('_', ' ')}:</b> {row[col]}" for col in news_cols if pd.notna(row[col])),
-                            axis=1
-                        )
-                        fig_spread.add_trace(go.Scatter(
-                            x=news_df_in_view['Date'], y=news_df_in_view[c1] - news_df_in_view[c2],
-                            mode='markers', name='News Event',
-                            marker=dict(size=10, color='rgba(255, 182, 193, .9)', symbol='circle'),
-                            hovertext=news_hover_text, hoverinfo="text",
-                            showlegend=False
-                        ))
-
-            fig_spread.update_layout(title="Historical Spread Comparison", xaxis_title="Date", yaxis_title="Price Difference ($)", template="plotly_white", hovermode="x unified")
+                spread_curve = filtered_df[c1] - filtered_df[c2]
+                csv_data[f"{c1}-{c2}"] = spread_curve
+                fig_spread.add_trace(go.Scatter(x=filtered_df["Date"], y=spread_curve, mode="lines", name=f"{c1}-{c2}"))
+                with stats_cols[i]:
+                    st.metric(label=f"{c1}-{c2} (Latest)", value=f"{spread_curve.iloc[-1]:.2f}")
+            st.markdown("---")
+            fig_spread.update_layout(title="Historical Spread Comparison", xaxis_title="Date", yaxis_title="Price Difference ($)", template="plotly_white")
             st.plotly_chart(fig_spread, use_container_width=True, key=f"spread_chart_{selected_symbol}")
+            if do_export:
+                st.download_button("Download Spread CSV", pd.DataFrame(csv_data).to_csv(index=False).encode("utf-8"), file_name=f"{selected_symbol}_spreads.csv", mime="text/csv", key=f"dl_spread_{selected_symbol}")
 
     with sub_tab2:
         st.markdown("**Compare Multiple Butterfly Spreads Over Time**")
@@ -286,48 +242,28 @@ with tab2:
         
         if selected_flies:
             fig_fly = go.Figure()
-            for f1, f2, f3 in selected_flies:
-                fly_values = merged_df[f1] - 2 * merged_df[f2] + merged_df[f3]
-                price_hover_text_fly = [
-                    f"<b>Date:</b> {d.strftime('%Y-%m-%d')}<br>"
-                    f"<b>{f1}:</b> {p1:.2f}<br>"
-                    f"<b>{f2}:</b> {p2:.2f}<br>"
-                    f"<b>{f3}:</b> {p3:.2f}<br>"
-                    f"<b>Fly Value:</b> {fv:.2f}"
-                    for d, p1, p2, p3, fv in zip(merged_df['Date'], merged_df[f1], merged_df[f2], merged_df[f3], fly_values)
-                ]
-                fig_fly.add_trace(go.Scatter(
-                    x=merged_df["Date"], y=fly_values, 
-                    mode="lines", name=f"Fly {f1}-{f2}-{f3}",
-                    hovertext=price_hover_text_fly, hoverinfo="text"
-                ))
-
-                if not df_news.empty:
-                    news_cols = df_news.columns.drop('Date')
-                    news_df_in_view = merged_df.dropna(subset=news_cols, how='all')
-                    
-                    if not news_df_in_view.empty:
-                        news_hover_text = news_df_in_view.apply(
-                            lambda row: f"<b>Date:</b> {row['Date'].strftime('%Y-%m-%d')}<br><hr>" + 
-                                        "<br>".join(f"<b>{col.replace('_', ' ')}:</b> {row[col]}" for col in news_cols if pd.notna(row[col])),
-                            axis=1
-                        )
-                        fly_values_news = news_df_in_view[f1] - 2 * news_df_in_view[f2] + news_df_in_view[f3]
-                        fig_fly.add_trace(go.Scatter(
-                            x=news_df_in_view['Date'], y=fly_values_news,
-                            mode='markers', name='News Event',
-                            marker=dict(size=10, color='rgba(255, 182, 193, .9)', symbol='circle'),
-                            hovertext=news_hover_text, hoverinfo="text",
-                            showlegend=False
-                        ))
-            fig_fly.update_layout(title="Historical Fly Comparison", xaxis_title="Date", yaxis_title="Price Difference ($)", template="plotly_white", hovermode="x unified")
+            fly_stats_cols = st.columns(len(selected_flies))
+            fly_csv_data = {"Date": filtered_df["Date"].dt.date}
+            for i, (f1, f2, f3) in enumerate(selected_flies):
+                fly_curve = filtered_df[f1] - 2 * filtered_df[f2] + filtered_df[f3]
+                fly_name = f"{f1}-{f2}-{f3}"
+                fly_csv_data[f"Fly_{fly_name}"] = fly_curve
+                fig_fly.add_trace(go.Scatter(x=filtered_df["Date"], y=fly_curve, mode="lines", name=f"Fly {fly_name}"))
+                with fly_stats_cols[i]:
+                    st.metric(label=f"Fly {fly_name} (Latest)", value=f"{fly_curve.iloc[-1]:.2f}")
+            st.markdown("---")
+            fig_fly.update_layout(title="Historical Fly Comparison", xaxis_title="Date", yaxis_title="Price Difference ($)", template="plotly_white")
             st.plotly_chart(fig_fly, use_container_width=True, key=f"fly_chart_{selected_symbol}")
+            if do_export:
+                st.download_button("Download Fly CSV", pd.DataFrame(fly_csv_data).to_csv(index=False).encode("utf-8"), file_name=f"{selected_symbol}_flys.csv", mime="text/csv", key=f"dl_fly_{selected_symbol}")
 
 with tab3:
     st.header("Curve Evolution Animation")
     st.info("Use the slider or the 'Play' button to animate the daily changes in the forward curve.")
     anim_df = work_df[["Date"] + contracts].copy().dropna(subset=contracts).reset_index(drop=True)
-    if not anim_df.empty:
+    if anim_df.empty:
+        st.warning("Not enough data to create an animation.")
+    else:
         fig_anim = go.Figure(
             data=[go.Scatter(x=contracts, y=anim_df.loc[0, contracts], mode="lines+markers")],
             layout=go.Layout(

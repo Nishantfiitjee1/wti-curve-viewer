@@ -113,13 +113,17 @@ def nearest_date_on_or_before(df: pd.DataFrame, target_d: date) -> date | None:
 
 
 def add_news_markers(fig: go.Figure, merged_df: pd.DataFrame, df_news: pd.DataFrame, y_series: pd.Series):
-    if df_news is None or df_news.empty:
+    """
+    Adds news markers to a figure, aligning them with the provided y_series.
+    """
+    if df_news is None or df_news.empty or y_series is None:
         return fig
 
     news_cols = [c for c in df_news.columns if c != "Date"]
     if not news_cols:
         return fig
 
+    # Ensure news columns exist in the merged dataframe before trying to drop NaNs
     existing_news_cols = [col for col in news_cols if col in merged_df.columns]
     if not existing_news_cols:
         return fig

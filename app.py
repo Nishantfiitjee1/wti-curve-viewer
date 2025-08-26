@@ -45,39 +45,57 @@ div.stButton > button {
 MASTER_EXCEL_FILE = "Futures_Data.xlsx"
 NEWS_EXCEL_FILE = "Important_news_date.xlsx"
 
+# Using the simplified sheet names as planned
 PRODUCT_CONFIG = {
-    "CL": {"name": "WTI Crude Oil", "sheet": "WTI_Outright"},
-    "BZ": {"name": "Brent Crude Oil", "sheet": "Brent_outright"},
-    "DBI": {"name": "Dubai Crude Oil", "sheet": "Dubai_Outright"},
+    "CL": {"name": "WTI Crude Oil", "sheet": "WTI"},
+    "BZ": {"name": "Brent Crude Oil", "sheet": "Brent"},
+    "DBI": {"name": "Dubai Crude Oil", "sheet": "Dubai"},
 }
 
 
 # ---------------------------- Data Loading & Utilities ----------------------------
 @st.cache_data(show_spinner="Loading product data...", ttl=3600)
 def load_product_data(file_path, sheet_name):
-    """Loads and parses futures data from a specific sheet in the master Excel file."""
+    """Loads and parses futures data based on the two-header structure."""
     df_raw = pd.read_excel(file_path, sheet_name=sheet_name, header=None, engine="openpyxl")
-    hdr0 = df_raw.iloc[0].tolist()
-    contracts = [str(x).strip() for x in hdr0[1:] if pd.notna(x) and str(x).strip() != ""]
+    
+    # Dynamically find header and data start
+    header_row_index = df_raw[df_raw[0] == 'Dates'].index[0] - 1
+    data_start_row_index = header_row_index + 2
+
+    contracts = [str(x).strip() for x in df_raw.iloc[header_row_index].tolist()[1:] if pd.notna(x) and str(x).strip() != ""]
     col_names = ["Date"] + contracts
-    df = df_raw.iloc[2:].copy()
+    
+    df = df_raw.iloc[data_start_row_index:].copy()
     df.columns = col_names
+    
     df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
     for c in contracts:
         df[c] = pd.to_numeric(df[c], errors="coerce")
+        
     df = df.dropna(subset=["Date"]).sort_values("Date").reset_index(drop=True)
     return df, contracts
 
 @st.cache_data(show_spinner="Loading news data...", ttl=3600)
 def load_news_data(file_path):
-    """Loads news data exactly as is, without weekend correction."""
+    """Loads news data and handles 'Date' vs 'Dates' column names."""
     df_news = pd.read_excel(file_path, engine="openpyxl")
+    
+    # **FIX**: Handle both 'Date' and 'Dates' as possible column names
+    date_col = None
     if 'Date' in df_news.columns:
+        date_col = 'Date'
+    elif 'Dates' in df_news.columns:
+        date_col = 'Dates'
+
+    if date_col:
+        # Rename to a consistent 'Date' for merging
+        df_news.rename(columns={date_col: 'Date'}, inplace=True)
         df_news["Date"] = pd.to_datetime(df_news["Date"], errors="coerce")
         df_news = df_news.dropna(subset=["Date"])
         return df_news
     else:
-        st.warning("The news file must contain a 'Date' column.")
+        st.warning("The news file must contain a 'Date' or 'Dates' column.")
         return pd.DataFrame()
 
 def curve_for_date(df: pd.DataFrame, contracts, d: date) -> pd.Series | None:
@@ -191,7 +209,6 @@ with tab2:
             for pair in spread_pairs:
                 c1, c2 = [x.strip() for x in pair.split("-")]
                 
-                # Trace 1: The main line with price data
                 price_hover_text = [
                     f"<b>Date:</b> {d.strftime('%Y-%m-%d')}<br>"
                     f"<b>{c1}:</b> {p1:.2f}<br>"
@@ -205,31 +222,87 @@ with tab2:
                     hovertext=price_hover_text, hoverinfo="text"
                 ))
 
-                # Trace 2: The news bubbles
-                news_df = merged_df.dropna(subset=['News', 'Link'])
-                if not news_df.empty:
-                    news_hover_text = [
-                        f"<b>Date:</b> {d.strftime('%Y-%m-%d')}<br>"
-                        f"<b>News:</b> {n}<br>"
-                        f"<a href='{l}' target='_blank'>Read More...</a>"
-                        for d, n, l in zip(news_df['Date'], news_df['News'], news_df['Link'])
-                    ]
-                    fig_spread.add_trace(go.Scatter(
-                        x=news_df['Date'], y=news_df[c1] - news_df[c2],
-                        mode='markers', name='News Event',
-                        marker=dict(size=10, color='rgba(255, 182, 193, .9)', symbol='circle'),
-                        hovertext=news_hover_text, hoverinfo="text",
-                        showlegend=False
-                    ))
+                # **FIX**: Robustly find news columns and create bubbles
+                if not df_news.empty:
+                    news_cols = df_news.columns.drop('Date')
+                    news_df_in_view = merged_df.dropna(subset=news_cols, how='all')
+                    
+                    if not news_df_in_view.empty:
+                        news_hover_text = news_df_in_view.apply(
+                            lambda row: f"<b>Date:</b> {row['Date'].strftime('%Y-%m-%d')}<br><hr>" + 
+                                        "<br>".join(f"<b>{col}:</b> {row[col]}" for col in news_cols if pd.notna(row[col])),
+                            axis=1
+                        )
+                        fig_spread.add_trace(go.Scatter(
+                            x=news_df_in_view['Date'], y=news_df_in_view[c1] - news_df_in_view[c2],
+                            mode='markers', name='News Event',
+                            marker=dict(size=10, color='rgba(255, 182, 193, .9)', symbol='circle'),
+                            hovertext=news_hover_text, hoverinfo="text",
+                            showlegend=False
+                        ))
 
             fig_spread.update_layout(title="Historical Spread Comparison", xaxis_title="Date", yaxis_title="Price Difference ($)", template="plotly_white", hovermode="x unified")
             st.plotly_chart(fig_spread, use_container_width=True, key=f"spread_chart_{selected_symbol}")
 
     with sub_tab2:
-        # (Fly logic follows the same pattern as Spread)
+        # (Fly logic is now complete and follows the same pattern as Spread)
         st.markdown("**Compare Multiple Butterfly Spreads Over Time**")
-        # ... (fly selection logic) ...
-        pass # Placeholder for fly logic
+        fly_type = st.radio("Fly construction method:", ["Auto (consecutive months)", "Manual selection"], index=0, horizontal=True, key=f"fly_type_{selected_symbol}")
+        selected_flies = []
+        if fly_type == "Manual selection":
+            num_flies = st.number_input("Number of flies", min_value=1, max_value=5, value=1, step=1, key=f"num_flies_{selected_symbol}")
+            for i in range(num_flies):
+                cols = st.columns(3)
+                f1 = cols[0].selectbox(f"Wing 1 (Fly {i+1})", contracts, index=0, key=f"fly_f1_{i}_{selected_symbol}")
+                f2 = cols[1].selectbox(f"Body (Fly {i+1})", contracts, index=1, key=f"fly_f2_{i}_{selected_symbol}")
+                f3 = cols[2].selectbox(f"Wing 2 (Fly {i+1})", contracts, index=2, key=f"fly_f3_{i}_{selected_symbol}")
+                selected_flies.append((f1, f2, f3))
+        else: # Auto
+            default_fly = [contracts[0]] if len(contracts) > 2 else []
+            base_contracts = st.multiselect("Select base contracts for Auto Fly", contracts, default=default_fly, key=f"fly_base_{selected_symbol}")
+            for base in base_contracts:
+                idx = contracts.index(base)
+                if idx + 2 < len(contracts): selected_flies.append((contracts[idx], contracts[idx+1], contracts[idx+2]))
+                else: st.warning(f"Not enough consecutive contracts for '{base}' auto fly. Skipping.")
+        
+        if selected_flies:
+            fig_fly = go.Figure()
+            for f1, f2, f3 in selected_flies:
+                fly_values = merged_df[f1] - 2 * merged_df[f2] + merged_df[f3]
+                price_hover_text_fly = [
+                    f"<b>Date:</b> {d.strftime('%Y-%m-%d')}<br>"
+                    f"<b>{f1}:</b> {p1:.2f}<br>"
+                    f"<b>{f2}:</b> {p2:.2f}<br>"
+                    f"<b>{f3}:</b> {p3:.2f}<br>"
+                    f"<b>Fly Value:</b> {fv:.2f}"
+                    for d, p1, p2, p3, fv in zip(merged_df['Date'], merged_df[f1], merged_df[f2], merged_df[f3], fly_values)
+                ]
+                fig_fly.add_trace(go.Scatter(
+                    x=merged_df["Date"], y=fly_values, 
+                    mode="lines", name=f"Fly {f1}-{f2}-{f3}",
+                    hovertext=price_hover_text_fly, hoverinfo="text"
+                ))
+
+                if not df_news.empty:
+                    news_cols = df_news.columns.drop('Date')
+                    news_df_in_view = merged_df.dropna(subset=news_cols, how='all')
+                    
+                    if not news_df_in_view.empty:
+                        news_hover_text = news_df_in_view.apply(
+                            lambda row: f"<b>Date:</b> {row['Date'].strftime('%Y-%m-%d')}<br><hr>" + 
+                                        "<br>".join(f"<b>{col}:</b> {row[col]}" for col in news_cols if pd.notna(row[col])),
+                            axis=1
+                        )
+                        fly_values_news = news_df_in_view[f1] - 2 * news_df_in_view[f2] + news_df_in_view[f3]
+                        fig_fly.add_trace(go.Scatter(
+                            x=news_df_in_view['Date'], y=fly_values_news,
+                            mode='markers', name='News Event',
+                            marker=dict(size=10, color='rgba(255, 182, 193, .9)', symbol='circle'),
+                            hovertext=news_hover_text, hoverinfo="text",
+                            showlegend=False
+                        ))
+            fig_fly.update_layout(title="Historical Fly Comparison", xaxis_title="Date", yaxis_title="Price Difference ($)", template="plotly_white", hovermode="x unified")
+            st.plotly_chart(fig_fly, use_container_width=True, key=f"fly_chart_{selected_symbol}")
 
 with tab3:
     # (Tab 3 remains unchanged)

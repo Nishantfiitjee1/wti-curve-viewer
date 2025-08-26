@@ -6,43 +6,8 @@ import plotly.graph_objects as go
 import streamlit as st
 from datetime import date, timedelta
 
-# ---------------------------- Page config and CSS ----------------------------
+# ---------------------------- Page config ----------------------------
 st.set_page_config(page_title="Futures Dashboard", layout="wide", initial_sidebar_state="collapsed")
-st.markdown("""
-<style>
-    /* Main app styling for dark theme */
-    body {
-        background-color: #1E1E1E;
-        color: #EAEAEA;
-    }
-    .stApp {
-        background-color: #1E1E1E;
-    }
-    /* Control panel expander */
-    .streamlit-expanderHeader {
-        font-size: 1.2rem;
-        font-weight: bold;
-        color: #FAFAFA;
-    }
-    /* Section headers */
-    h2 {
-        color: #00A8E8;
-        border-bottom: 2px solid #00A8E8;
-        padding-bottom: 5px;
-    }
-    /* Custom styling for placeholder text */
-    .placeholder-text {
-        font-size: 1.5rem;
-        font-weight: bold;
-        color: #888;
-        text-align: center;
-        margin-top: 5rem;
-        border: 2px dashed #444;
-        padding: 2rem;
-        border-radius: 10px;
-    }
-</style>
-""", unsafe_allow_html=True)
 
 
 # ---------------------------- 1. CENTRAL FILE & PRODUCT CONFIGURATION ----------------------------
@@ -107,17 +72,28 @@ def filter_dates(df, selected_range):
     return df[df["Date"] >= min_date]
 
 # ---------------------------- Chart Styling Function ----------------------------
-def style_figure(fig, title):
-    """Applies the custom dark theme styling to a Plotly figure."""
-    fig.update_layout(
-        title=dict(text=title, font=dict(color='#EAEAEA')),
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        xaxis=dict(color='#888', gridcolor='#444'),
-        yaxis=dict(color='#888', gridcolor='#444'),
-        legend=dict(font=dict(color='#EAEAEA')),
-        hovermode="x unified"
-    )
+def style_figure(fig, title, theme='light'):
+    """Applies styling to a Plotly figure based on the selected theme."""
+    if theme == 'dark':
+        fig.update_layout(
+            title=dict(text=title, font=dict(color='#EAEAEA')),
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            xaxis=dict(color='#888', gridcolor='#444'),
+            yaxis=dict(color='#888', gridcolor='#444'),
+            legend=dict(font=dict(color='#EAEAEA')),
+            hovermode="x unified"
+        )
+    else: # Light theme
+        fig.update_layout(
+            title=dict(text=title, font=dict(color='#333')),
+            paper_bgcolor='rgba(255,255,255,1)',
+            plot_bgcolor='rgba(255,255,255,1)',
+            xaxis=dict(gridcolor='#eee'),
+            yaxis=dict(gridcolor='#eee'),
+            hovermode="x unified",
+            template="plotly_white"
+        )
     return fig
 
 # ---------------------------- Main App Logic ----------------------------
@@ -159,6 +135,17 @@ with st.expander("Show Control Panel", expanded=True):
         multi_dates = st.multiselect("Overlay Dates", options=all_dates, default=[all_dates[0], all_dates[min(1, len(all_dates)-1)]], key=f"multiselect_{selected_symbol}")
     with c4:
         normalize = st.checkbox("Normalize Curves (z-score)", key=f"normalize_{selected_symbol}")
+        dark_mode = st.toggle("Enable Dark Mode", key="dark_mode_toggle")
+
+# --- THEME MANAGEMENT ---
+theme = 'dark' if dark_mode else 'light'
+if dark_mode:
+    st.markdown("""
+    <style>
+        .stApp { background-color: #1E1E1E; color: #EAEAEA; }
+        h2 { color: #00A8E8; border-bottom: 2px solid #00A8E8; padding-bottom: 5px; }
+    </style>
+    """, unsafe_allow_html=True)
 
 # --- Data Preparation ---
 work_df = df.copy()
@@ -179,7 +166,7 @@ with col1:
     else:
         fig_single = go.Figure()
         fig_single.add_trace(go.Scatter(x=contracts, y=s1.values, mode='lines+markers', name=str(single_date), line=dict(color='#00A8E8')))
-        fig_single = style_figure(fig_single, f"Curve for {single_date}")
+        fig_single = style_figure(fig_single, f"Curve for {single_date}", theme=theme)
         st.plotly_chart(fig_single, use_container_width=True)
 
 # --- Chart 2: Multi-Date Overlay ---
@@ -190,10 +177,10 @@ with col2:
         st.warning("No data for selected overlay dates.")
     else:
         fig_overlay = go.Figure()
-        colors = ['#00A8E8', '#EAEAEA', '#FFA500', '#FF4500']
+        colors = ['#00A8E8', '#EAEAEA', '#FFA500', '#FF4500'] if theme == 'dark' else ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
         for i, (d, s) in enumerate(valid_curves.items()):
             fig_overlay.add_trace(go.Scatter(x=contracts, y=s.values, mode='lines+markers', name=str(d), line=dict(color=colors[i % len(colors)])))
-        fig_overlay = style_figure(fig_overlay, "Multi-Date Overlay")
+        fig_overlay = style_figure(fig_overlay, "Multi-Date Overlay", theme=theme)
         st.plotly_chart(fig_overlay, use_container_width=True)
 
 st.markdown("---")
@@ -231,7 +218,7 @@ with col3:
                     news_hover_text = news_df_in_view.apply(lambda row: f"<b>Date:</b> {row['Date'].strftime('%Y-%m-%d')}<br><hr>" + "<br>".join(f"<b>{col.replace('_', ' ')}:</b> {row[col]}" for col in news_cols if pd.notna(row[col])), axis=1)
                     fig_spread.add_trace(go.Scatter(x=news_df_in_view['Date'], y=news_df_in_view[c1] - news_df_in_view[c2], mode='markers', name='News Event', marker=dict(size=10, color='#FFA500', symbol='circle'), hovertext=news_hover_text, hoverinfo="text", showlegend=False))
         
-        fig_spread = style_figure(fig_spread, "Historical Spreads")
+        fig_spread = style_figure(fig_spread, "Historical Spreads", theme=theme)
         st.plotly_chart(fig_spread, use_container_width=True)
 
 # --- Chart 5 & 6: Flies ---
@@ -261,7 +248,7 @@ with col4:
                     fly_values_news = news_df_in_view[f1] - 2 * news_df_in_view[f2] + news_df_in_view[f3]
                     fig_fly.add_trace(go.Scatter(x=news_df_in_view['Date'], y=fly_values_news, mode='markers', name='News Event', marker=dict(size=10, color='#FFA500', symbol='circle'), hovertext=news_hover_text, hoverinfo="text", showlegend=False))
         
-        fig_fly = style_figure(fig_fly, "Historical Flies")
+        fig_fly = style_figure(fig_fly, "Historical Flies", theme=theme)
         st.plotly_chart(fig_fly, use_container_width=True)
 
 # --- Raw Data Preview ---

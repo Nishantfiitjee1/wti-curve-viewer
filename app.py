@@ -57,10 +57,11 @@ PRODUCT_CONFIG = {
 # ---------------------------- Data Loading & Utilities ----------------------------
 @st.cache_data(show_spinner="Loading product data...", ttl=3600)
 def load_product_data(file_path, sheet_name):
-    """Loads and parses futures data based on the two-header structure."""
+    """Loads and parses futures data from a specific sheet in the master Excel file."""
     df_raw = pd.read_excel(file_path, sheet_name=sheet_name, header=None, engine="openpyxl")
     
-    # **FIX**: Dynamically find header and data start based on your Excel format
+    # This part is now smarter: It finds the row with "Dates" in the first column
+    # to correctly locate your headers and the start of your data.
     header_row_index = df_raw[df_raw[0] == 'Dates'].index[0] - 1
     data_start_row_index = header_row_index + 2
 

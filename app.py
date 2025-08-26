@@ -46,10 +46,11 @@ div.stButton > button {
 MASTER_EXCEL_FILE = "Futures_Data.xlsx"
 OPEC_EXCEL_FILE = "opec_meeting_date.xlsx"
 
+# This configuration is now case-insensitive because of the code fix below.
 PRODUCT_CONFIG = {
-    "CL": {"name": "WTI Crude Oil", "sheet": "WTI_Outright"},
-    "BZ": {"name": "Brent Crude Oil", "sheet": "Brent_outright"},
-    "DBI": {"name": "Dubai Crude Oil", "sheet": "Dubai_Outright"},
+    "CL": {"name": "WTI Crude Oil", "sheet": "WTI"},
+    "BZ": {"name": "Brent Crude Oil", "sheet": "Brent"},
+    "DBI": {"name": "Dubai Crude Oil", "sheet": "Dubai"},
 }
 
 
@@ -58,21 +59,28 @@ PRODUCT_CONFIG = {
 def load_product_data(file_path, sheet_name):
     """Loads and parses futures data from a specific sheet in the master Excel file."""
     df_raw = pd.read_excel(file_path, sheet_name=sheet_name, header=None, engine="openpyxl")
-    hdr0 = df_raw.iloc[0].tolist()
-    contracts = [str(x).strip() for x in hdr0[1:] if pd.notna(x) and str(x).strip() != ""]
+    
+    # Find the row with contract names (e.g., CL1 Comdty)
+    header_row_index = 0
+    contracts = [str(x).strip() for x in df_raw.iloc[header_row_index].tolist()[1:] if pd.notna(x) and str(x).strip() != ""]
+    
+    # Find the row where data starts (the one after "Dates")
+    data_start_row_index = df_raw[df_raw[0] == 'Dates'].index[0] + 1
+
     col_names = ["Date"] + contracts
-    df = df_raw.iloc[2:].copy()
+    df = df_raw.iloc[data_start_row_index:].copy()
     df.columns = col_names
+    
     df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
     for c in contracts:
         df[c] = pd.to_numeric(df[c], errors="coerce")
+        
     df = df.dropna(subset=["Date"]).sort_values("Date").reset_index(drop=True)
     return df, contracts
 
 @st.cache_data(show_spinner="Loading OPEC data...", ttl=3600)
 def load_opec_dates(file_path):
     """Loads OPEC decision dates from the OPEC Excel file."""
-    # This function now expects the file to exist.
     df_opec = pd.read_excel(file_path, engine="openpyxl")
     if 'Date' in df_opec.columns:
         df_opec["Date"] = pd.to_datetime(df_opec["Date"], errors="coerce")
@@ -120,19 +128,16 @@ target_sheet_name_from_config = selected_product_info["sheet"]
 # ---------------------------- Main App Logic ----------------------------
 st.title(f"{selected_product_info['name']} Curve Viewer")
 
-# --- Check for master futures data file ---
 if not os.path.exists(MASTER_EXCEL_FILE):
     st.error(f"Master data file not found: `{MASTER_EXCEL_FILE}`. Please ensure it is in the same directory.")
     st.stop()
 
-# --- Load OPEC data (if file exists) ---
 if os.path.exists(OPEC_EXCEL_FILE):
     df_opec = load_opec_dates(OPEC_EXCEL_FILE)
 else:
     st.sidebar.warning(f"OPEC file (`{OPEC_EXCEL_FILE}`) not found. Hover data will be incomplete.")
-    df_opec = pd.DataFrame() # Create empty dataframe if file is missing
+    df_opec = pd.DataFrame()
 
-# --- Load Product Data ---
 try:
     excel_file_handler = pd.ExcelFile(MASTER_EXCEL_FILE)
     excel_sheets = excel_file_handler.sheet_names
@@ -150,7 +155,6 @@ except Exception as e:
     st.error(f"Could not read the data. Error: {e}")
     st.stop()
 
-# --- Sidebar Date Controls ---
 st.sidebar.header("Date Selection")
 all_dates = sorted(df["Date"].dt.date.unique().tolist(), reverse=True)
 max_d, min_d = all_dates[0], all_dates[-1]
@@ -162,18 +166,15 @@ st.sidebar.header("Display Options")
 normalize = st.sidebar.checkbox("Normalize curves (z-score)", key=f"normalize_{selected_symbol}")
 do_export = st.sidebar.checkbox("Enable CSV export", key=f"export_{selected_symbol}")
 
-# --- Data Preparation ---
 work_df = df.copy()
 if normalize:
     vals = work_df[contracts].astype(float)
     work_df[contracts] = (vals - vals.mean(axis=1).values[:, None]) / vals.std(axis=1).values[:, None]
 
-# --- Main UI Tabs ---
 st.caption("Analysis of futures curves, spreads, and historical evolution.")
 tab1, tab2, tab3 = st.tabs(["Outright", "Spread and Fly", "Curve Animation"])
 
 with tab1:
-    # (Tab 1 remains unchanged)
     st.header(f"Curve Analysis for {single_date}")
     s1 = curve_for_date(work_df, contracts, single_date)
     if s1 is None:
@@ -205,21 +206,15 @@ with tab2:
     
     filtered_df = filter_dates(work_df, selected_range)
     if not df_opec.empty:
-        # Merge product data with all columns from the OPEC data
         merged_df = pd.merge(filtered_df, df_opec, on="Date", how="left")
     else:
         merged_df = filtered_df.copy()
 
-    # Create a column for the hover text, filling NaNs for non-OPEC days
-    # This assumes your OPEC file has a 'Decision' column for the main text
-    if 'Decision' in merged_df.columns:
-         merged_df['OPEC_Info'] = merged_df.apply(
-            lambda row: "<br>".join(f"<b>{col}:</b> {row[col]}" for col in df_opec.columns if col != 'Date' and pd.notna(row[col])),
-            axis=1
-        )
-    else:
-        merged_df['OPEC_Info'] = "No Decision"
-
+    opec_cols = df_opec.columns.drop("Date") if not df_opec.empty else []
+    merged_df['OPEC_Info'] = merged_df.apply(
+        lambda row: "<br>".join(f"<b>{col}:</b> {row[col]}" for col in opec_cols if pd.notna(row[col])),
+        axis=1
+    )
 
     sub_tab1, sub_tab2 = st.tabs(["Spread Analysis", "Fly Analysis"])
 
@@ -232,7 +227,6 @@ with tab2:
             fig_spread = go.Figure()
             for pair in spread_pairs:
                 c1, c2 = [x.strip() for x in pair.split("-")]
-                
                 hover_text = [
                     f"<b>Date:</b> {d.strftime('%Y-%m-%d')}<br>"
                     f"<hr><b>OPEC Info:</b><br>{info if info else 'No Decision'}<hr>"
@@ -245,13 +239,11 @@ with tab2:
                         merged_df[c1] - merged_df[c2]
                     )
                 ]
-                
                 fig_spread.add_trace(go.Scatter(
                     x=merged_df["Date"], y=merged_df[c1] - merged_df[c2], 
                     mode="lines", name=f"{c1}-{c2}",
                     hovertext=hover_text, hoverinfo="text"
                 ))
-
             fig_spread.update_layout(title="Historical Spread Comparison", xaxis_title="Date", yaxis_title="Price Difference ($)", template="plotly_white", hovermode="x unified")
             st.plotly_chart(fig_spread, use_container_width=True, key=f"spread_chart_{selected_symbol}")
 
@@ -259,7 +251,21 @@ with tab2:
         st.markdown("**Compare Multiple Butterfly Spreads Over Time**")
         fly_type = st.radio("Fly construction method:", ["Auto (consecutive months)", "Manual selection"], index=0, horizontal=True, key=f"fly_type_{selected_symbol}")
         selected_flies = []
-        # (Fly selection logic remains the same)
+        if fly_type == "Manual selection":
+            num_flies = st.number_input("Number of flies", min_value=1, max_value=5, value=1, step=1, key=f"num_flies_{selected_symbol}")
+            for i in range(num_flies):
+                cols = st.columns(3)
+                f1 = cols[0].selectbox(f"Wing 1 (Fly {i+1})", contracts, index=0, key=f"fly_f1_{i}_{selected_symbol}")
+                f2 = cols[1].selectbox(f"Body (Fly {i+1})", contracts, index=1, key=f"fly_f2_{i}_{selected_symbol}")
+                f3 = cols[2].selectbox(f"Wing 2 (Fly {i+1})", contracts, index=2, key=f"fly_f3_{i}_{selected_symbol}")
+                selected_flies.append((f1, f2, f3))
+        else: # Auto
+            default_fly = [contracts[0]] if len(contracts) > 2 else []
+            base_contracts = st.multiselect("Select base contracts for Auto Fly", contracts, default=default_fly, key=f"fly_base_{selected_symbol}")
+            for base in base_contracts:
+                idx = contracts.index(base)
+                if idx + 2 < len(contracts): selected_flies.append((contracts[idx], contracts[idx+1], contracts[idx+2]))
+                else: st.warning(f"Not enough consecutive contracts for '{base}' auto fly. Skipping.")
         
         if selected_flies:
             fig_fly = go.Figure()
@@ -277,21 +283,47 @@ with tab2:
                         merged_df[f1] - 2 * merged_df[f2] + merged_df[f3]
                     )
                 ]
-
                 fig_fly.add_trace(go.Scatter(
                     x=merged_df["Date"], y=merged_df[f1] - 2 * merged_df[f2] + merged_df[f3], 
                     mode="lines", name=f"Fly {f1}-{f2}-{f3}",
                     hovertext=hover_text_fly, hoverinfo="text"
                 ))
-
             fig_fly.update_layout(title="Historical Fly Comparison", xaxis_title="Date", yaxis_title="Price Difference ($)", template="plotly_white", hovermode="x unified")
             st.plotly_chart(fig_fly, use_container_width=True, key=f"fly_chart_{selected_symbol}")
 
-
 with tab3:
-    # (Tab 3 remains unchanged)
     st.header("Curve Evolution Animation")
-    # ... (rest of animation logic) ...
+    st.info("Use the slider or the 'Play' button to animate the daily changes in the forward curve.")
+    anim_df = work_df[["Date"] + contracts].copy().dropna(subset=contracts).reset_index(drop=True)
+    if not anim_df.empty:
+        fig_anim = go.Figure(
+            data=[go.Scatter(x=contracts, y=anim_df.loc[0, contracts], mode="lines+markers")],
+            layout=go.Layout(
+                title="Forward Curve Evolution",
+                xaxis_title="Contract", yaxis_title="Price ($)" if not normalize else "Z-score",
+                template="plotly_white", margin=dict(l=40, r=20, t=60, b=40),
+                updatemenus=[dict(
+                    type="buttons", showactive=False, y=1.15, x=1.05, xanchor="right", yanchor="top",
+                    buttons=[
+                        dict(label="Play", method="animate", args=[None, {"frame": {"duration": 50, "redraw": True}, "fromcurrent": True, "transition": {"duration": 0}}]),
+                        dict(label="Pause", method="animate", args=[[None], {"frame": {"duration": 0, "redraw": False}, "mode": "immediate"}])
+                    ]
+                )],
+                sliders=[dict(
+                    active=0, transition={"duration": 0}, currentvalue={"prefix": "Date: ", "font": {"size": 14}},
+                    steps=[dict(
+                        method="animate",
+                        args=[[str(d.date())], {"mode": "immediate", "frame": {"duration": 100, "redraw": True}, "transition": {"duration": 50}}],
+                        label=str(d.date())
+                    ) for d in anim_df["Date"]]
+                )]
+            ),
+            frames=[go.Frame(
+                data=[go.Scatter(x=contracts, y=anim_df.loc[i, contracts])],
+                name=str( anim_df.loc[i, "Date"].date() )
+            ) for i in range(len(anim_df))]
+        )
+        st.plotly_chart(fig_anim, use_container_width=True, key=f"anim_chart_{selected_symbol}")
 
 with st.expander("Preview Raw Data"):
     st.dataframe(df.head(25))

@@ -247,11 +247,16 @@ with header_cols[0]:
         key = f"chk_prod_{symbol}"
         if key not in st.session_state:
             st.session_state[key] = symbol in st.session_state["selected_products"]
-        checked = prod_cols[i].checkbox(symbol, value=st.session_state[key], key=key)
-        st.session_state[key] = checked
+
+        # checkbox automatically updates session_state[key]
+        prod_cols[i].checkbox(symbol, value=st.session_state[key], key=key)
 
     # update selected product list
-    st.session_state["selected_products"] = [s for s in PRODUCT_CONFIG.keys() if st.session_state.get(f"chk_prod_{s}", False)]
+    st.session_state["selected_products"] = [
+        s for s in PRODUCT_CONFIG.keys()
+        if st.session_state.get(f"chk_prod_{s}", False)
+    ]
+
 
 with header_cols[1]:
     st.markdown("**Date**")

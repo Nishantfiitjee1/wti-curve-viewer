@@ -20,7 +20,7 @@ st.markdown(
 body, .block-container { padding-top: 8px; padding-bottom: 8px; }
 
 /* Header */
-.header { background-color: #F0F2F6; padding: 6px 10px; border-radius: 6px; margin-bottom: 8px; border: 1px solid #E0E0E0; }
+.header { background-color: #F0F2F6; padding: 6px 10px; border-radius: 6px; margin-bottom: 15px; border: 1px solid #E0E0E0; }
 
 /* Small compact controls */
 .stButton>button { border-radius: 4px; padding: 2px 6px; border: 1px solid #B0B0B0; background-color: #FFFFFF; color: #111; font-size: 12px; height: 26px; }

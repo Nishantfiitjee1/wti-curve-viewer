@@ -151,3 +151,88 @@ if not all_data:
 # ---------------------------
 st.markdown('<div class="header">', unsafe_allow_html=True)
 header_cols = st.columns([1.5,2.0,1.8,1.2,1.0])
+
+with header_cols[0]:
+    st.markdown("**Products**")
+    prod_cols = st.columns(len(PRODUCT_CONFIG))
+    for i, (symbol, cfg) in enumerate(PRODUCT_CONFIG.items()):
+        if prod_cols[i].button(symbol, key=f"prod_{symbol}"):
+            if symbol in st.session_state.selected_products:
+                st.session_state.selected_products.remove(symbol)
+            else:
+                st.session_state.selected_products.append(symbol)
+
+with header_cols[1]:
+    st.date_input("Start Date", value=st.session_state.start_date, key="start_date")
+with header_cols[2]:
+    st.date_input("End Date", value=st.session_state.end_date, key="end_date")
+with header_cols[3]:
+    st.button("Maximize Chart", key="maximize")
+with header_cols[4]:
+    st.button("Show Table", key="show_table")
+st.markdown('</div>', unsafe_allow_html=True)
+
+# ---------------------------
+# PLOT DATA
+# ---------------------------
+for symbol in st.session_state.selected_products:
+    pdata = all_data.get(symbol)
+    if pdata is None: continue
+    df = pdata["data"]
+    df_filtered = filter_by_date_window(df, st.session_state.start_date, st.session_state.end_date)
+    if df_filtered.empty: continue
+    fig = go.Figure()
+    for col in pdata["contracts"]:
+        fig.add_trace(go.Scatter(x=df_filtered["Date"], y=df_filtered[col], mode="lines+markers", name=col))
+    fig = style_figure(fig, f"{PRODUCT_CONFIG[symbol]['name']} Outright Curves")
+    fig = add_news_markers(fig, df_filtered, df_news)
+    st.plotly_chart(fig, use_container_width=True)
+
+# ---------------------------
+# SPREADS EXAMPLE
+# ---------------------------
+st.markdown("### Spreads Example")
+for symbol in st.session_state.selected_products:
+    pdata = all_data.get(symbol)
+    if pdata is None: continue
+    df = pdata["data"]
+    df_filtered = filter_by_date_window(df, st.session_state.start_date, st.session_state.end_date)
+    if df_filtered.empty or len(pdata["contracts"])<2: continue
+    spread = spread_series(df_filtered, pdata["contracts"][0], pdata["contracts"][1])
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df_filtered["Date"], y=spread, mode="lines+markers", name=f"Spread {pdata['contracts'][0]}-{pdata['contracts'][1]}"))
+    fig = style_figure(fig, f"{PRODUCT_CONFIG[symbol]['name']} First Spread")
+    st.plotly_chart(fig, use_container_width=True)
+
+# ---------------------------
+# FLY EXAMPLE
+# ---------------------------
+st.markdown("### Fly Example")
+for symbol in st.session_state.selected_products:
+    pdata = all_data.get(symbol)
+    if pdata is None: continue
+    df = pdata["data"]
+    if len(pdata["contracts"])<3: continue
+    df_filtered = filter_by_date_window(df, st.session_state.start_date, st.session_state.end_date)
+    fly = fly_series(df_filtered, pdata["contracts"][0], pdata["contracts"][1], pdata["contracts"][2])
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df_filtered["Date"], y=fly, mode="lines+markers", name=f"Fly {pdata['contracts'][0]}-{pdata['contracts'][1]}-{pdata['contracts'][2]}"))
+    fig = style_figure(fig, f"{PRODUCT_CONFIG[symbol]['name']} First Fly")
+    st.plotly_chart(fig, use_container_width=True)
+
+# ---------------------------
+# SHOW TABLE OPTION
+# ---------------------------
+if st.session_state.show_table:
+    st.markdown("### Table View")
+    for symbol in st.session_state.selected_products:
+        pdata = all_data.get(symbol)
+        if pdata is None: continue
+        df_filtered = filter_by_date_window(pdata["data"], st.session_state.start_date, st.session_state.end_date)
+        if df_filtered.empty: continue
+        st.markdown(f"#### {PRODUCT_CONFIG[symbol]['name']}")
+        st.dataframe(df_filtered)
+
+# ---------------------------
+# END OF DASHBOARD
+# ---------------------------

@@ -237,18 +237,21 @@ if not all_data:
 st.markdown('<div class="header">', unsafe_allow_html=True)
 header_cols = st.columns([1.2, 1.8, 1.6, 1.2, 1.0])
 
-# Removed Views section - merged capabilities onto single page
+# ------------------------
+# Products
+# ------------------------
 with header_cols[0]:
     st.markdown("**Products**")
 
-    # Inline product pills (compact checkboxes but placed side-by-side, minimal gap)
+    # Inline product pills (compact checkboxes side-by-side)
     prod_cols = st.columns(len(PRODUCT_CONFIG))
     for i, (symbol, cfg) in enumerate(PRODUCT_CONFIG.items()):
         key = f"chk_prod_{symbol}"
+        # initialize if not in session_state
         if key not in st.session_state:
-            st.session_state[key] = symbol in st.session_state["selected_products"]
+            st.session_state[key] = symbol in st.session_state.get("selected_products", [])
 
-        # checkbox automatically updates session_state[key]
+        # checkbox manages its own session_state
         prod_cols[i].checkbox(symbol, value=st.session_state[key], key=key)
 
     # update selected product list
@@ -257,61 +260,113 @@ with header_cols[0]:
         if st.session_state.get(f"chk_prod_{s}", False)
     ]
 
-
+# ------------------------
+# Date
+# ------------------------
 with header_cols[1]:
     st.markdown("**Date**")
-    # Small calendar button behavior:
-    # single small date_input; if user wants overlays they can toggle 'Overlay' to open a compact multiselect
-    st.session_state["picked_one_date"] = st.date_input(
-        "Date", value=st.session_state["picked_one_date"] or nearest_date_on_or_before(all_data[list(all_data.keys())[0]]["data"], st.session_state["end_date"]) or date.today(), key="compact_date"
+
+    default_one_date = (
+        st.session_state.get("picked_one_date")
+        or nearest_date_on_or_before(
+            all_data[list(all_data.keys())[0]]["data"],
+            st.session_state.get("end_date")
+        )
+        or date.today()
     )
-    overlay = st.checkbox("Overlay dates", value=bool(st.session_state["picked_multi_dates"]), key="overlay_toggle")
+
+    st.date_input(
+        "Date",
+        value=default_one_date,
+        key="picked_one_date"
+    )
+
+    overlay = st.checkbox(
+        "Overlay dates",
+        value=bool(st.session_state.get("picked_multi_dates")),
+        key="overlay_toggle"
+    )
+
     if overlay:
-        # build compact list of available dates across selected products
         available_dates = set()
         for s in st.session_state["selected_products"]:
             df_s = all_data.get(s, {}).get("data")
             if df_s is None or df_s.empty:
                 continue
             available_dates |= set(df_s["Date"].dt.date.dropna().unique())
+
         all_dates = sorted(available_dates, reverse=True)
-        st.session_state["picked_multi_dates"] = st.multiselect("Overlay", options=all_dates, default=st.session_state["picked_multi_dates"], key="overlay_dates", help="Pick multiple dates to overlay on curves")
+
+        st.multiselect(
+            "Overlay",
+            options=all_dates,
+            default=st.session_state.get("picked_multi_dates", []),
+            key="picked_multi_dates",
+            help="Pick multiple dates to overlay on curves"
+        )
     else:
         st.session_state["picked_multi_dates"] = []
 
+# ------------------------
+# Range
+# ------------------------
 with header_cols[2]:
     st.markdown("**Range**")
-    st.session_state["start_date"] = st.date_input("Start", value=st.session_state["start_date"], key="start_date")
-    st.session_state["end_date"] = st.date_input("End", value=st.session_state["end_date"], key="end_date")
 
+    st.date_input(
+        "Start",
+        value=st.session_state.get("start_date", date.today()),
+        key="start_date"
+    )
+    st.date_input(
+        "End",
+        value=st.session_state.get("end_date", date.today()),
+        key="end_date"
+    )
+
+# ------------------------
+# Tools
+# ------------------------
 with header_cols[3]:
     st.markdown("**Tools**")
-    # Maximize toggle (full-size charts) and Show Table button
-    if st.button("Maximize Charts", key="max_btn"):
-        st.session_state["maximize"] = not st.session_state["maximize"]
-    if st.button("Show Table", key="table_btn"):
-        st.session_state["show_table"] = not st.session_state["show_table"]
 
+    if st.button("Maximize Charts", key="max_btn"):
+        st.session_state["maximize"] = not st.session_state.get("maximize", False)
+
+    if st.button("Show Table", key="table_btn"):
+        st.session_state["show_table"] = not st.session_state.get("show_table", False)
+
+# ------------------------
+# Actions
+# ------------------------
 with header_cols[4]:
     st.markdown("**Actions**")
+
     if st.button("Refresh Data", key="refresh_btn"):
         st.cache_data.clear()
         st.experimental_rerun()
 
 st.markdown("</div>", unsafe_allow_html=True)
 
+# ------------------------
 # If no products selected, stop
+# ------------------------
 if not st.session_state["selected_products"]:
     st.warning("Select at least one product.")
     st.stop()
 
-# show selected product badges (compact, overlay-like)
+# ------------------------
+# Show selected product badges
+# ------------------------
 selected_badges_html = "<div class='selected-badges'>"
 for sym in st.session_state["selected_products"]:
-    color_class = "badge color"
-    selected_badges_html += f"<span class='badge' style='border-left:4px solid {PRODUCT_CONFIG[sym]['color']};'>{sym}</span>"
+    selected_badges_html += (
+        f"<span class='badge' style='border-left:4px solid {PRODUCT_CONFIG[sym]['color']};'>{sym}</span>"
+    )
 selected_badges_html += "</div>"
+
 st.markdown(selected_badges_html, unsafe_allow_html=True)
+
 
 # ==================================================================================================
 # 5. MAIN PAGE — merged Curves, Compare, Workspace (all visible)

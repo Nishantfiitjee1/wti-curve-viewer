@@ -1,3 +1,4 @@
+# app.py
 import io
 import os
 import numpy as np
@@ -9,21 +10,50 @@ from datetime import date, timedelta
 # ==================================================================================================
 # PAGE CONFIGURATION AND STYLING
 # ==================================================================================================
-st.set_page_config(page_title="Futures Dashboard", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Futures Dashboard", layout="wide", initial_sidebar_state="expanded")
 
-# Compact and professional light theme CSS
+# Compact professional styling and denser layout to use screen pixels efficiently
 st.markdown(
     """
 <style>
-    .stApp { background-color: #FFFFFF; color: #1E1E1E; }
-    .header { background-color: #F0F2F6; padding: 6px 10px; border-radius: 6px; margin-bottom: 12px; border: 1px solid #E0E0E0; }
-    h2 { color: #1E1E1E; border-bottom: 2px solid #00A8E8; padding-bottom: 8px; margin-top: 16px; font-size: 1.3rem; font-weight: bold; }
-    .stButton>button { border-radius: 4px; padding: 2px 6px; border: 1px solid #B0B0B0; background-color: #FFFFFF; color: #333; font-weight: 500; transition: all 0.12s; height: 28px; font-size: 12px; }
-    .stButton>button:hover { border-color: #00A8E8; color: #00A8E8; }
-    .stDateInput { background-color: #FFFFFF; border-radius: 4px; }
-    div[data-testid="stCheckbox"] label { font-size: 12px; }
-    .stMultiSelect, .stSelectbox, .stDateInput { font-size: 12px; }
-    .element-container .stDataFrame { padding: 6px 6px 10px 6px; }
+/* App density & fonts */
+body, .block-container { padding-top: 8px; padding-bottom: 8px; }
+
+/* Header */
+.header { background-color: #F0F2F6; padding: 6px 10px; border-radius: 6px; margin-bottom: 8px; border: 1px solid #E0E0E0; }
+
+/* Small compact controls */
+.stButton>button { border-radius: 4px; padding: 2px 6px; border: 1px solid #B0B0B0; background-color: #FFFFFF; color: #111; font-size: 12px; height: 26px; }
+div[data-testid="stCheckbox"] label, .stSelectbox, .stMultiSelect, .stDateInput, .stNumberInput { font-size: 12px; }
+
+/* Product pills inline and dense */
+.product-pill {
+  display:inline-block;
+  margin:0 6px 2px 0;
+  padding:4px 8px;
+  border-radius:12px;
+  background:#f5f7fa;
+  font-size:12px;
+  border:1px solid #ddd;
+}
+.product-pill.selected { background:#00A8E8; color:white; border-color:#0091d6; }
+
+/* Selected names overlay (small badge group) */
+.selected-badges { position: relative; margin-bottom: 6px; }
+.badge { display: inline-block; padding: 4px 8px; margin-right:6px; border-radius:12px; background:#eee; font-size:12px; border:1px solid #ddd; }
+.badge.color { background: #00A8E8; color: #fff; border-color:#0087c9; }
+
+/* Tight dataframe area */
+.element-container .stDataFrame { padding: 6px 6px 10px 6px; }
+
+/* Full-width "Maximize" button appearance */
+.max-btn { width:100%; padding:8px 10px; font-weight:600; font-size:13px; }
+
+/* Reduce default column gaps */
+.row-widget.stColumns .stColumn { padding-left:6px; padding-right:6px; }
+
+/* Hide Streamlit default footer (optional) */
+/* footer {display:none;} */
 </style>
 """,
     unsafe_allow_html=True,
@@ -49,7 +79,6 @@ def load_all_data():
     all_product_data = {}
     if not os.path.exists(MASTER_EXCEL_FILE):
         return {}, pd.DataFrame()
-
     for symbol, config in PRODUCT_CONFIG.items():
         try:
             df_raw = pd.read_excel(MASTER_EXCEL_FILE, sheet_name=config["sheet"], header=None, engine="openpyxl")
@@ -68,11 +97,10 @@ def load_all_data():
             df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
             for c in contracts:
                 df[c] = pd.to_numeric(df[c], errors="coerce")
-
             df = df.dropna(subset=["Date"]).sort_values("Date", ascending=False).reset_index(drop=True)
             all_product_data[symbol] = {"data": df, "contracts": contracts}
         except Exception as e:
-            st.warning(f"Could not load or parse sheet for {config['name']}. Please check format. Error: {e}")
+            st.warning(f"Could not load/parse sheet for {config['name']}. Error: {e}")
             continue
 
     df_news = pd.DataFrame()
@@ -83,7 +111,6 @@ def load_all_data():
             news_df_raw.rename(columns={date_col: "Date"}, inplace=True)
             news_df_raw["Date"] = pd.to_datetime(news_df_raw["Date"], errors="coerce")
             df_news = news_df_raw.dropna(subset=["Date"]).sort_values("Date").reset_index(drop=True)
-
     return all_product_data, df_news
 
 
@@ -96,7 +123,7 @@ def style_figure(fig: go.Figure, title: str) -> go.Figure:
         yaxis=dict(color="#333", gridcolor="#EAEAEA", zeroline=False),
         legend=dict(font=dict(color="#333"), yanchor="top", y=0.99, xanchor="left", x=0.01),
         hovermode="x unified",
-        margin=dict(l=40, r=20, t=50, b=40),
+        margin=dict(l=28, r=12, t=44, b=28),
     )
     return fig
 
@@ -112,25 +139,43 @@ def nearest_date_on_or_before(df: pd.DataFrame, target_d: date) -> date | None:
     return subset["Date"].max().date()
 
 
-def add_news_markers(fig: go.Figure, merged_df: pd.DataFrame, df_news: pd.DataFrame, y_series: pd.Series):
+def add_news_markers(fig: go.Figure, merged_df: pd.DataFrame, df_news: pd.DataFrame, y_series: pd.Series | None = None):
     """
-    Adds news markers to a figure, aligning them with the provided y_series.
+    Safe news markers add. y_series optional — if provided align markers to series values.
     """
-    if df_news is None or df_news.empty or y_series is None:
+    if df_news is None or df_news.empty:
         return fig
-
     news_cols = [c for c in df_news.columns if c != "Date"]
     if not news_cols:
         return fig
 
-    # Ensure news columns exist in the merged dataframe before trying to drop NaNs
-    existing_news_cols = [col for col in news_cols if col in merged_df.columns]
-    if not existing_news_cols:
+    # If merged_df does not have news cols, attempt to merge on Date and dropna safely
+    if merged_df is None or merged_df.empty:
         return fig
-        
-    news_df_in_view = merged_df.dropna(subset=existing_news_cols, how="all")
+
+    # if merged_df already contains news columns
+    if set(news_cols).issubset(set(merged_df.columns)):
+        news_df_in_view = merged_df.dropna(subset=news_cols, how="all")
+    else:
+        joined = pd.merge(merged_df, df_news, on="Date", how="left", suffixes=("", "_news"))
+        # find which news cols exist now
+        existing_news = [c for c in news_cols if c in joined.columns]
+        if not existing_news:
+            return fig
+        news_df_in_view = joined.dropna(subset=existing_news, how="all")
+
     if news_df_in_view.empty:
         return fig
+
+    if y_series is None:
+        # place markers slightly above maximum of plotted data if possible
+        try:
+            y_val = merged_df.select_dtypes(include=[np.number]).max().max()
+            y_series = pd.Series(index=news_df_in_view.index, dtype=float)
+            y_series[:] = (y_val if np.isfinite(y_val) else 0) * 0.98
+        except Exception:
+            y_series = pd.Series(index=news_df_in_view.index, dtype=float)
+            y_series[:] = np.nan
 
     news_hover_text = news_df_in_view.apply(
         lambda row: f"<b>Date:</b> {row['Date'].strftime('%Y-%m-%d')}<br><hr>"
@@ -141,10 +186,12 @@ def add_news_markers(fig: go.Figure, merged_df: pd.DataFrame, df_news: pd.DataFr
     fig.add_trace(
         go.Scatter(
             x=news_df_in_view["Date"],
-            y=y_series.loc[news_df_in_view.index],
-            mode="markers", name="News",
-            marker=dict(size=8, color="#FF6B6B", symbol="circle"),
-            hovertext=news_hover_text, hoverinfo="text",
+            y=y_series.loc[news_df_in_view.index] if y_series is not None else None,
+            mode="markers",
+            name="News",
+            marker=dict(size=8, color="#FF6B6B", symbol="diamond"),
+            hovertext=news_hover_text,
+            hoverinfo="text",
             showlegend=False,
         )
     )
@@ -158,11 +205,6 @@ def spread_series(df: pd.DataFrame, c1: str, c2: str) -> pd.Series:
 def fly_series(df: pd.DataFrame, f1: str, f2: str, f3: str) -> pd.Series:
     return df[f1] - 2 * df[f2] + df[f3]
 
-def update_selected_products():
-    """Callback function to safely update the selected products list from checkboxes."""
-    st.session_state["selected_products"] = [
-        s for s in PRODUCT_CONFIG.keys() if st.session_state.get(f"chk_prod_{s}", False)
-    ]
 
 # ==================================================================================================
 # 3. STATE MANAGEMENT INITIALIZATION
@@ -173,334 +215,376 @@ if "start_date" not in st.session_state:
     st.session_state["start_date"] = date.today() - timedelta(days=365)
 if "end_date" not in st.session_state:
     st.session_state["end_date"] = date.today()
-if "current_view" not in st.session_state:
-    st.session_state["current_view"] = "Curves"
+if "picked_one_date" not in st.session_state:
+    st.session_state["picked_one_date"] = None
+if "picked_multi_dates" not in st.session_state:
+    st.session_state["picked_multi_dates"] = []
+if "maximize" not in st.session_state:
+    st.session_state["maximize"] = False
+if "show_table" not in st.session_state:
+    st.session_state["show_table"] = False
 
 # ==================================================================================================
-# 4. MAIN APP LOGIC AND LAYOUT
+# 4. LOAD DATA
 # ==================================================================================================
 all_data, df_news = load_all_data()
 
 if not all_data:
-    st.error(
-        f"Master data file not found or is empty: `{MASTER_EXCEL_FILE}`. Please ensure it is in the same directory and correctly formatted."
-    )
+    st.error(f"Master data file not found or empty: `{MASTER_EXCEL_FILE}`.")
     st.stop()
 
-# ---------------------------- HEADER CONTROL PANEL ----------------------------
+# ---------------------------- HEADER (no views) ----------------------------
 st.markdown('<div class="header">', unsafe_allow_html=True)
-header_cols = st.columns([1.6, 3, 2.6, 1.2, 0.8])
+header_cols = st.columns([1.2, 1.8, 1.6, 1.2, 1.0])
 
+# Removed Views section - merged capabilities onto single page
 with header_cols[0]:
-    st.write("**Views**")
-    view_buttons = ["Curves", "Compare", "Table", "Workspace"]
-    for view in view_buttons:
-        if st.button(view, key=f"btn_view_{view}", use_container_width=True):
-            st.session_state.current_view = view
+    st.markdown("**Products**")
 
-with header_cols[1]:
-    st.write("**Products**")
+    # Inline product pills (compact checkboxes but placed side-by-side, minimal gap)
     prod_cols = st.columns(len(PRODUCT_CONFIG))
-    for i, (symbol, config) in enumerate(PRODUCT_CONFIG.items()):
+    for i, (symbol, cfg) in enumerate(PRODUCT_CONFIG.items()):
         key = f"chk_prod_{symbol}"
         if key not in st.session_state:
             st.session_state[key] = symbol in st.session_state["selected_products"]
-        
-        prod_cols[i].checkbox(
-            symbol,
-            value=st.session_state[key],
-            key=key,
-            on_change=update_selected_products
-        )
+        checked = prod_cols[i].checkbox(symbol, value=st.session_state[key], key=key)
+        st.session_state[key] = checked
+
+    # update selected product list
+    st.session_state["selected_products"] = [s for s in PRODUCT_CONFIG.keys() if st.session_state.get(f"chk_prod_{s}", False)]
+
+with header_cols[1]:
+    st.markdown("**Date**")
+    # Small calendar button behavior:
+    # single small date_input; if user wants overlays they can toggle 'Overlay' to open a compact multiselect
+    st.session_state["picked_one_date"] = st.date_input(
+        "Date", value=st.session_state["picked_one_date"] or nearest_date_on_or_before(all_data[list(all_data.keys())[0]]["data"], st.session_state["end_date"]) or date.today(), key="compact_date"
+    )
+    overlay = st.checkbox("Overlay dates", value=bool(st.session_state["picked_multi_dates"]), key="overlay_toggle")
+    if overlay:
+        # build compact list of available dates across selected products
+        available_dates = set()
+        for s in st.session_state["selected_products"]:
+            df_s = all_data.get(s, {}).get("data")
+            if df_s is None or df_s.empty:
+                continue
+            available_dates |= set(df_s["Date"].dt.date.dropna().unique())
+        all_dates = sorted(available_dates, reverse=True)
+        st.session_state["picked_multi_dates"] = st.multiselect("Overlay", options=all_dates, default=st.session_state["picked_multi_dates"], key="overlay_dates", help="Pick multiple dates to overlay on curves")
+    else:
+        st.session_state["picked_multi_dates"] = []
 
 with header_cols[2]:
-    st.write("**Date Range**")
-    date_cols = st.columns(2)
-    st.session_state.start_date = date_cols[0].date_input("Start Date", value=st.session_state.start_date, key="start_date_picker", label_visibility="collapsed")
-    st.session_state.end_date = date_cols[1].date_input("End Date", value=st.session_state.end_date, key="end_date_picker", label_visibility="collapsed")
+    st.markdown("**Range**")
+    st.session_state["start_date"] = st.date_input("Start", value=st.session_state["start_date"], key="start_date")
+    st.session_state["end_date"] = st.date_input("End", value=st.session_state["end_date"], key="end_date")
 
 with header_cols[3]:
-    st.write("**Actions**")
-    if st.button("Refresh", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
+    st.markdown("**Tools**")
+    # Maximize toggle (full-size charts) and Show Table button
+    if st.button("Maximize Charts", key="max_btn"):
+        st.session_state["maximize"] = not st.session_state["maximize"]
+    if st.button("Show Table", key="table_btn"):
+        st.session_state["show_table"] = not st.session_state["show_table"]
 
-# Visually highlight current view button
-for view in view_buttons:
-    if st.session_state.current_view == view:
-        st.markdown(f"<style>#root .stButton button[key='btn_view_{view}'] {{background-color: #00A8E8; color: white;}}</style>", unsafe_allow_html=True)
+with header_cols[4]:
+    st.markdown("**Actions**")
+    if st.button("Refresh Data", key="refresh_btn"):
+        st.cache_data.clear()
+        st.experimental_rerun()
 
 st.markdown("</div>", unsafe_allow_html=True)
 
-if not st.session_state.selected_products:
-    st.warning("Please select at least one product to display.")
+# If no products selected, stop
+if not st.session_state["selected_products"]:
+    st.warning("Select at least one product.")
     st.stop()
 
+# show selected product badges (compact, overlay-like)
+selected_badges_html = "<div class='selected-badges'>"
+for sym in st.session_state["selected_products"]:
+    color_class = "badge color"
+    selected_badges_html += f"<span class='badge' style='border-left:4px solid {PRODUCT_CONFIG[sym]['color']};'>{sym}</span>"
+selected_badges_html += "</div>"
+st.markdown(selected_badges_html, unsafe_allow_html=True)
+
 # ==================================================================================================
-# 5A. CURVES VIEW
+# 5. MAIN PAGE — merged Curves, Compare, Workspace (all visible)
 # ==================================================================================================
-if st.session_state.current_view == "Curves":
-    st.markdown("## Outright Curves – Select Dates & Compare")
-
-    ctl_cols = st.columns([2.2, 2.2, 1, 1])
-    with ctl_cols[0]:
-        global_dates_mode = st.radio(
-            "Date selection mode",
-            ["Latest per product", "Pick one date", "Pick multiple dates"],
-            index=0,
-            horizontal=True,
-        )
-
-    available_dates = set()
-    for s in st.session_state.selected_products:
-        df_s = all_data.get(s, {}).get("data")
-        if df_s is None or df_s.empty:
-            continue
-        available_dates |= set(df_s["Date"].dt.date.dropna().unique())
-    all_dates = sorted(available_dates, reverse=True)
-
-    with ctl_cols[1]:
-        if global_dates_mode == "Pick one date":
-            picked_one_date = st.date_input("Outright date", value=all_dates[0] if all_dates else date.today(), key="picked_one_date")
-        elif global_dates_mode == "Pick multiple dates":
-            picked_multi_dates = st.multiselect(
-                "Outright dates (overlay)", options=all_dates, default=all_dates[:3] if len(all_dates) >= 3 else all_dates, key="picked_multi_dates"
-            )
-
-    with ctl_cols[2]:
-        normalize_curves = st.checkbox("Normalize (z)", value=False)
-    with ctl_cols[3]:
-        show_values = st.checkbox("Show values", value=False)
-
-    prods = st.session_state.selected_products
+# Layout behavior: if maximize True, render charts in single column full width; otherwise use 2 or 3 column grid optimally
+prods = st.session_state["selected_products"]
+if st.session_state["maximize"]:
+    cols_per_row = 1
+else:
     cols_per_row = min(3, max(1, len(prods)))
-    rows = (len(prods) + cols_per_row - 1) // cols_per_row
-    idx = 0
-    for _ in range(rows):
-        cols = st.columns(cols_per_row)
-        for c in cols:
-            if idx >= len(prods):
-                break
-            symbol = prods[idx]
-            idx += 1
-            product_data = all_data.get(symbol)
-            if not product_data:
-                continue
-            df, contracts = product_data["data"], product_data["contracts"]
 
-            if global_dates_mode == "Latest per product":
-                d_use = nearest_date_on_or_before(df, st.session_state.end_date)
-                sel_dates = [d_use] if d_use else []
-            elif global_dates_mode == "Pick one date":
-                d_use = nearest_date_on_or_before(df, picked_one_date)
-                sel_dates = [d_use] if d_use else []
-            else:
-                sel_dates = [nearest_date_on_or_before(df, d) for d in picked_multi_dates] if 'picked_multi_dates' in locals() else []
-                sel_dates = [d for d in sel_dates if d is not None]
+# ------------------ Outright Curves (per product) ------------------
+st.markdown("## Outright Curves")
+normalize_curves = st.checkbox("Normalize curves (z-score)", value=False, key="normalize_all")
+show_values = st.checkbox("Show point values", value=False, key="show_values_all")
 
-            if not sel_dates:
-                c.warning(f"No curve for selected date(s) in {symbol}.")
-                continue
+# Determine which dates to plot per product
+# If overlay multi dates provided -> use those; else use single picked date or latest
+multi_dates = st.session_state.get("picked_multi_dates", []) or []
+single_picked = st.session_state.get("picked_one_date", None)
 
-            fig = go.Figure()
-            for d_plot in sel_dates:
-                row = df[df["Date"].dt.date == d_plot]
-                if row.empty:
-                    continue
-                s = row.iloc[0][contracts].astype(float)
-                if normalize_curves:
-                    s = (s - s.mean()) / (s.std() if s.std() != 0 else 1)
-                fig.add_trace(
-                    go.Scatter(
-                        x=contracts,
-                        y=s.values,
-                        mode="lines+markers" + ("+text" if show_values else ""),
-                        name=str(d_plot),
-                        line=dict(color=PRODUCT_CONFIG[symbol]["color"], width=2.5),
-                        text=[f"{val:.2f}" for val in s.values],
-                        textposition="top center",
-                    )
-                )
-            ylab = "Z-score" if normalize_curves else "Price ($)"
-            fig = style_figure(fig, f"{PRODUCT_CONFIG[symbol]['name']} Outright")
-            fig.update_yaxes(title_text=ylab)
-            c.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-
-# ==================================================================================================
-# 5B. COMPARE VIEW
-# ==================================================================================================
-elif st.session_state.current_view == "Compare":
-    st.markdown("## Cross-Product Compare – Spreads & Flies")
-
-    universe_spreads = []
-    universe_flies = []
-    for symbol in st.session_state.selected_products:
-        contracts = all_data[symbol]["contracts"]
-        universe_spreads += [
-            f"{symbol}: {c1}-{c2}"
-            for i, c1 in enumerate(contracts)
-            for c2 in contracts[i + 1 :]
-        ]
-        universe_flies += [
-            f"{symbol}: {a}-{b}-{c}"
-            for i, a in enumerate(contracts)
-            for j, b in enumerate(contracts[i + 1 :], start=i + 1)
-            for c in contracts[j + 1 :]
-        ]
-
-    c1, c2 = st.columns(2)
-    with c1:
-        sel_spreads = st.multiselect(
-            "Select spreads to compare",
-            options=universe_spreads,
-            default=universe_spreads[:4] if universe_spreads else [],
-            key="sel_spreads"
-        )
-    with c2:
-        sel_flies = st.multiselect(
-            "Select flies to compare",
-            options=universe_flies,
-            default=universe_flies[:3] if universe_flies else [],
-            key="sel_flies"
-        )
-
-    normalize_ts = st.checkbox("Normalize time series (z per series)", value=False)
-
-    def norm_series(s: pd.Series) -> pd.Series:
-        std = s.std()
-        return (s - s.mean()) / (std if std not in (0, np.nan) else 1)
-
-    if sel_spreads:
-        figS = go.Figure()
-        last_sub = pd.DataFrame()
-        for item in sel_spreads:
-            try:
-                sym, pair = item.split(":")
-            except ValueError:
-                continue
-            sym = sym.strip()
-            c1x, c2x = [p.strip() for p in pair.split("-")]
-            df = all_data[sym]["data"]
-            sub = filter_by_date_window(df, st.session_state.start_date, st.session_state.end_date)
-            last_sub = sub
-            if sub.empty:
-                continue
-            series = spread_series(sub, c1x, c2x)
-            if normalize_ts:
-                series = norm_series(series)
-            figS.add_trace(
-                go.Scatter(x=sub["Date"], y=series, mode="lines", name=f"{sym} {c1x}-{c2x}", line=dict(width=2))
-            )
-        add_news_markers(figS, last_sub, df_news, series)
-        figS = style_figure(figS, "Selected Spreads – Cross Product")
-        figS.update_yaxes(title_text=("Z-Score" if normalize_ts else "Price Diff ($)"))
-        st.plotly_chart(figS, use_container_width=True, config={"displayModeBar": False})
-
-    if sel_flies:
-        figF = go.Figure()
-        last_sub = pd.DataFrame()
-        for item in sel_flies:
-            try:
-                sym, trip = item.split(":")
-            except ValueError:
-                continue
-            sym = sym.strip()
-            a, b, c = [p.strip() for p in trip.split("-")]
-            df = all_data[sym]["data"]
-            sub = filter_by_date_window(df, st.session_state.start_date, st.session_state.end_date)
-            last_sub = sub
-            if sub.empty:
-                continue
-            series = fly_series(sub, a, b, c)
-            if normalize_ts:
-                series = norm_series(series)
-            figF.add_trace(
-                go.Scatter(x=sub["Date"], y=series, mode="lines", name=f"{sym} {a}-{b}-{c}", line=dict(width=2))
-            )
-        add_news_markers(figF, last_sub, df_news, series)
-        figF = style_figure(figF, "Selected Flies – Cross Product")
-        figF.update_yaxes(title_text=("Z-Score" if normalize_ts else "Price Diff ($)"))
-        st.plotly_chart(figF, use_container_width=True, config={"displayModeBar": False})
-
-# ==================================================================================================
-# 5C. TABLE VIEW
-# ==================================================================================================
-elif st.session_state.current_view == "Table":
-    st.markdown("## Data Table")
-    for symbol in st.session_state.selected_products:
+rows = (len(prods) + cols_per_row - 1) // cols_per_row
+idx = 0
+for _ in range(rows):
+    cols = st.columns(cols_per_row)
+    for c in cols:
+        if idx >= len(prods):
+            break
+        symbol = prods[idx]
+        idx += 1
         product_data = all_data.get(symbol)
         if not product_data:
             continue
+        df, contracts = product_data["data"], product_data["contracts"]
+
+        # choose dates
+        if multi_dates:
+            sel_dates = [nearest_date_on_or_before(df, d) for d in multi_dates]
+            sel_dates = [d for d in sel_dates if d is not None]
+        else:
+            if single_picked:
+                d_use = nearest_date_on_or_before(df, single_picked)
+            else:
+                d_use = nearest_date_on_or_before(df, st.session_state["end_date"])
+            sel_dates = [d_use] if d_use else []
+
+        if not sel_dates:
+            c.warning(f"No curve for selected date(s) in {symbol}.")
+            continue
+
+        fig = go.Figure()
+        for d_plot in sel_dates:
+            row = df[df["Date"].dt.date == d_plot]
+            if row.empty:
+                continue
+            s = row.iloc[0][contracts].astype(float)
+            if normalize_curves:
+                s = (s - s.mean()) / (s.std() if s.std() != 0 else 1)
+            fig.add_trace(
+                go.Scatter(
+                    x=contracts,
+                    y=s.values,
+                    mode="lines+markers" + ("+text" if show_values else ""),
+                    name=str(d_plot),
+                    line=dict(color=PRODUCT_CONFIG[symbol]["color"], width=2.5),
+                    text=[f"{val:.2f}" for val in s.values] if show_values else None,
+                    textposition="top center" if show_values else None,
+                )
+            )
+
+        fig = style_figure(fig, f"{PRODUCT_CONFIG[symbol]['name']} Outright")
+        fig.update_yaxes(title_text="Z-score" if normalize_curves else "Price ($)")
+        c.plotly_chart(fig, use_container_width=True, config={"displayModeBar": True})
+
+# ------------------ Quick Spreads & Flies per product (compact area) ------------------
+st.markdown("## Quick Spreads & Flies (per product)")
+qcols = st.columns(2)
+with qcols[0]:
+    for symbol in prods:
+        df, contracts = all_data[symbol]["data"], all_data[symbol]["contracts"]
+        if len(contracts) < 2:
+            st.caption(f"{symbol}: not enough contracts for spreads")
+            continue
+        # default top 3 consecutive pairs
+        default_pairs = [f"{contracts[i]} - {contracts[i+1]}" for i in range(min(3, len(contracts)-1))]
+        choices = st.multiselect(f"{symbol} spreads", options=[f"{c1} - {c2}" for i, c1 in enumerate(contracts) for c2 in contracts[i+1:]], default=default_pairs, key=f"spread_multi_{symbol}")
+        if choices:
+            sub = filter_by_date_window(df, st.session_state["start_date"], st.session_state["end_date"])
+            if sub.empty:
+                st.caption(f"{symbol}: no data in range")
+            else:
+                fig = go.Figure()
+                for pair in choices:
+                    a, b = [p.strip() for p in pair.split("-")]
+                    series = spread_series(sub, a, b)
+                    fig.add_trace(go.Scatter(x=sub["Date"], y=series, mode="lines", name=f"{symbol} {a}-{b}", line=dict(color=PRODUCT_CONFIG[symbol]["color"], width=1.6)))
+                # align markers at series mean for news
+                mean_series = sub.select_dtypes(include=[np.number]).mean(axis=1) if not sub.empty else None
+                add_news_markers(fig, sub, df_news, y_series=series if not series.empty else None)
+                fig = style_figure(fig, f"{symbol} Spreads")
+                fig.update_yaxes(title_text="Price Diff ($)")
+                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+with qcols[1]:
+    for symbol in prods:
+        df, contracts = all_data[symbol]["data"], all_data[symbol]["contracts"]
+        if len(contracts) < 3:
+            st.caption(f"{symbol}: not enough contracts for flies")
+            continue
+        default_flies = [f"{contracts[i]} - {contracts[i+1]} - {contracts[i+2]}" for i in range(min(2, len(contracts)-2))]
+        choices = st.multiselect(f"{symbol} flies", options=[f"{a} - {b} - {c}" for i,a in enumerate(contracts) for j,b in enumerate(contracts[i+1:], start=i+1) for c in contracts[j+1:]], default=default_flies, key=f"fly_multi_{symbol}")
+        if choices:
+            sub = filter_by_date_window(df, st.session_state["start_date"], st.session_state["end_date"])
+            if sub.empty:
+                st.caption(f"{symbol}: no data in range")
+            else:
+                fig = go.Figure()
+                for item in choices:
+                    f1, f2, f3 = [p.strip() for p in item.split("-")]
+                    series = fly_series(sub, f1, f2, f3)
+                    fig.add_trace(go.Scatter(x=sub["Date"], y=series, mode="lines", name=f"{symbol} {f1}-{f2}-{f3}", line=dict(color=PRODUCT_CONFIG[symbol]["color"], width=1.6)))
+                add_news_markers(fig, sub, df_news, y_series=series if not series.empty else None)
+                fig = style_figure(fig, f"{symbol} Flies")
+                fig.update_yaxes(title_text="Price Diff ($)")
+                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+# ------------------ Cross-product Compare area ------------------
+st.markdown("## Cross-Product Compare (multi-product time series)")
+# Build universe
+universe_spreads = []
+universe_flies = []
+for symbol in prods:
+    contracts = all_data[symbol]["contracts"]
+    universe_spreads += [f"{symbol}: {c1}-{c2}" for i,c1 in enumerate(contracts) for c2 in contracts[i+1:]]
+    universe_flies += [f"{symbol}: {a}-{b}-{c}" for i,a in enumerate(contracts) for j,b in enumerate(contracts[i+1:], start=i+1) for c in contracts[j+1:]]
+
+c1, c2 = st.columns(2)
+with c1:
+    sel_spreads = st.multiselect("Select spreads", options=universe_spreads, default=universe_spreads[:4] if universe_spreads else [], key="sel_spreads")
+with c2:
+    sel_flies = st.multiselect("Select flies", options=universe_flies, default=universe_flies[:3] if universe_flies else [], key="sel_flies")
+
+normalize_ts = st.checkbox("Normalize selected series (z per series)", value=False, key="normalize_sel")
+
+def norm_series(s: pd.Series) -> pd.Series:
+    std = s.std()
+    return (s - s.mean()) / (std if std not in (0, np.nan) else 1)
+
+if sel_spreads:
+    figS = go.Figure()
+    last_sub = pd.DataFrame()
+    for item in sel_spreads:
+        try:
+            sym, pair = item.split(":")
+        except ValueError:
+            continue
+        sym = sym.strip()
+        cA, cB = [p.strip() for p in pair.split("-")]
+        df = all_data[sym]["data"]
+        sub = filter_by_date_window(df, st.session_state["start_date"], st.session_state["end_date"])
+        last_sub = sub
+        if sub.empty:
+            continue
+        series = spread_series(sub, cA, cB)
+        if normalize_ts:
+            series = norm_series(series)
+        figS.add_trace(go.Scatter(x=sub["Date"], y=series, mode="lines", name=f"{sym} {cA}-{cB}", line=dict(width=2)))
+    add_news_markers(figS, last_sub, df_news, y_series=series if 'series' in locals() else None)
+    figS = style_figure(figS, "Selected Spreads – Cross Product")
+    figS.update_yaxes(title_text="Z" if normalize_ts else "Price Diff ($)")
+    st.plotly_chart(figS, use_container_width=True, config={"displayModeBar": True})
+
+if sel_flies:
+    figF = go.Figure()
+    last_sub = pd.DataFrame()
+    for item in sel_flies:
+        try:
+            sym, trip = item.split(":")
+        except ValueError:
+            continue
+        sym = sym.strip()
+        a, b, c = [p.strip() for p in trip.split("-")]
+        df = all_data[sym]["data"]
+        sub = filter_by_date_window(df, st.session_state["start_date"], st.session_state["end_date"])
+        last_sub = sub
+        if sub.empty:
+            continue
+        series = fly_series(sub, a, b, c)
+        if normalize_ts:
+            series = norm_series(series)
+        figF.add_trace(go.Scatter(x=sub["Date"], y=series, mode="lines", name=f"{sym} {a}-{b}-{c}", line=dict(width=2)))
+    add_news_markers(figF, last_sub, df_news, y_series=series if 'series' in locals() else None)
+    figF = style_figure(figF, "Selected Flies – Cross Product")
+    figF.update_yaxes(title_text="Z" if normalize_ts else "Price Diff ($)")
+    st.plotly_chart(figF, use_container_width=True, config={"displayModeBar": True})
+
+# ------------------ Workspace consolidated charts (summary area) ------------------
+st.markdown("## Workspace Summary")
+# Latest Outrights aggregated
+st.markdown("### Latest Outrights by product")
+cols_per_row = cols_per_row
+idx = 0
+rows = (len(prods) + cols_per_row - 1) // cols_per_row
+for _ in range(rows):
+    cols = st.columns(cols_per_row)
+    for c in cols:
+        if idx >= len(prods): break
+        symbol = prods[idx]; idx += 1
+        df, contracts = all_data[symbol]["data"], all_data[symbol]["contracts"]
+        d_use = nearest_date_on_or_before(df, st.session_state["end_date"])
+        if d_use is None:
+            c.caption(f"{symbol}: no date")
+            continue
+        row = df[df["Date"].dt.date == d_use]
+        if row.empty:
+            c.caption(f"{symbol}: no row")
+            continue
+        s = row.iloc[0][contracts].astype(float)
+        fig = go.Figure(go.Scatter(x=contracts, y=s.values, mode="lines+markers", line=dict(color=PRODUCT_CONFIG[symbol]["color"], width=2)))
+        style_figure(fig, f"{symbol} Outright ({d_use})")
+        c.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+# M1-M2 combined chart
+st.markdown("### M1-M2 Combined (all selected products)")
+fig_comb = go.Figure()
+any_added = False
+last_sub = pd.DataFrame()
+for symbol in prods:
+    df, contracts = all_data[symbol]["data"], all_data[symbol]["contracts"]
+    if len(contracts) < 2: continue
+    sub = filter_by_date_window(df, st.session_state["start_date"], st.session_state["end_date"])
+    last_sub = sub
+    if sub.empty: continue
+    series = spread_series(sub, contracts[0], contracts[1])
+    fig_comb.add_trace(go.Scatter(x=sub["Date"], y=series, mode="lines", name=f"{symbol} {contracts[0]}-{contracts[1]}", line=dict(color=PRODUCT_CONFIG[symbol]["color"], width=1.8)))
+    any_added = True
+if any_added:
+    add_news_markers(fig_comb, last_sub, df_news, y_series=series if 'series' in locals() else None)
+    fig_comb = style_figure(fig_comb, "M1-M2 – All Selected Products")
+    st.plotly_chart(fig_comb, use_container_width=True, config={"displayModeBar": True})
+else:
+    st.info("No M1-M2 spreads found for selection.")
+
+# M1-M2-M3 combined chart
+st.markdown("### M1-M2-M3 Combined (all selected products)")
+fig_comb_f = go.Figure()
+any_added = False
+last_sub = pd.DataFrame()
+for symbol in prods:
+    df, contracts = all_data[symbol]["data"], all_data[symbol]["contracts"]
+    if len(contracts) < 3: continue
+    sub = filter_by_date_window(df, st.session_state["start_date"], st.session_state["end_date"])
+    last_sub = sub
+    if sub.empty: continue
+    series = fly_series(sub, contracts[0], contracts[1], contracts[2])
+    fig_comb_f.add_trace(go.Scatter(x=sub["Date"], y=series, mode="lines", name=f"{symbol} {contracts[0]}-{contracts[1]}-{contracts[2]}", line=dict(color=PRODUCT_CONFIG[symbol]["color"], width=1.8)))
+    any_added = True
+if any_added:
+    add_news_markers(fig_comb_f, last_sub, df_news, y_series=series if 'series' in locals() else None)
+    fig_comb_f = style_figure(fig_comb_f, "M1-M2-M3 – All Selected Products")
+    st.plotly_chart(fig_comb_f, use_container_width=True, config={"displayModeBar": True})
+else:
+    st.info("No flies found for selection.")
+
+# ------------------ Table toggle (on demand) ------------------
+if st.session_state["show_table"]:
+    st.markdown("## Data Tables")
+    for symbol in prods:
+        product_data = all_data.get(symbol)
+        if not product_data: continue
         df = product_data["data"]
         st.markdown(f"### {PRODUCT_CONFIG[symbol]['name']}")
-        filtered_df = filter_by_date_window(df, st.session_state.start_date, st.session_state.end_date)
+        filtered_df = filter_by_date_window(df, st.session_state["start_date"], st.session_state["end_date"])
         if filtered_df.empty:
-            st.warning(f"No data for {symbol} in the selected date range.")
+            st.caption(f"No data for {symbol} in the selected range.")
         else:
             st.dataframe(filtered_df, use_container_width=True)
 
 # ==================================================================================================
-# 5D. WORKSPACE VIEW
+# END
 # ==================================================================================================
-elif st.session_state.current_view == "Workspace":
-    st.markdown("## Trader Workspace – Outrights, Spreads, Flies at a glance")
-
-    prods = st.session_state.selected_products
-    cols_per_row = min(3, max(1, len(prods)))
-    
-    st.markdown("### Latest Outrights (by product)")
-    idx = 0
-    rows = (len(prods) + cols_per_row - 1) // cols_per_row
-    for _ in range(rows):
-        cols = st.columns(cols_per_row)
-        for c in cols:
-            if idx >= len(prods): break
-            symbol = prods[idx]
-            idx += 1
-            df, contracts = all_data[symbol]["data"], all_data[symbol]["contracts"]
-            d_use = nearest_date_on_or_before(df, st.session_state.end_date)
-            if d_use is None:
-                c.warning(f"{symbol}: no date available")
-                continue
-            row = df[df["Date"].dt.date == d_use]
-            if row.empty: continue
-            s = row.iloc[0][contracts].astype(float)
-            fig = go.Figure(go.Scatter(x=contracts, y=s.values, mode="lines+markers", name=str(d_use), line=dict(color=PRODUCT_CONFIG[symbol]["color"], width=2.5)))
-            fig = style_figure(fig, f"{symbol} Outright ({d_use})")
-            c.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-
-    st.markdown("### M1-M2 Spreads – Cross Product")
-    figS = go.Figure()
-    any_added = False
-    last_sub = pd.DataFrame()
-    for symbol in prods:
-        df, contracts = all_data[symbol]["data"], all_data[symbol]["contracts"]
-        if len(contracts) < 2: continue
-        sub = filter_by_date_window(df, st.session_state.start_date, st.session_state.end_date)
-        last_sub = sub
-        if sub.empty: continue
-        series = spread_series(sub, contracts[0], contracts[1])
-        figS.add_trace(go.Scatter(x=sub["Date"], y=series, mode="lines", name=f"{symbol} {contracts[0]}-{contracts[1]}", line=dict(color=PRODUCT_CONFIG[symbol]["color"])))
-        any_added = True
-    if any_added:
-        add_news_markers(figS, last_sub, df_news, series)
-        figS = style_figure(figS, "M1-M2 – All Selected Products")
-        st.plotly_chart(figS, use_container_width=True, config={"displayModeBar": False})
-
-    st.markdown("### M1-M2-M3 Flies – Cross Product")
-    figF = go.Figure()
-    any_added = False
-    last_sub = pd.DataFrame()
-    for symbol in prods:
-        df, contracts = all_data[symbol]["data"], all_data[symbol]["contracts"]
-        if len(contracts) < 3: continue
-        sub = filter_by_date_window(df, st.session_state.start_date, st.session_state.end_date)
-        last_sub = sub
-        if sub.empty: continue
-        series = fly_series(sub, contracts[0], contracts[1], contracts[2])
-        figF.add_trace(go.Scatter(x=sub["Date"], y=series, mode="lines", name=f"{symbol} {contracts[0]}-{contracts[1]}-{contracts[2]}", line=dict(color=PRODUCT_CONFIG[symbol]["color"])))
-        any_added = True
-    if any_added:
-        add_news_markers(figF, last_sub, df_news, series)
-        figF = style_figure(figF, "M1-M2-M3 – All Selected Products")
-        st.plotly_chart(figF, use_container_width=True, config={"displayModeBar": False})

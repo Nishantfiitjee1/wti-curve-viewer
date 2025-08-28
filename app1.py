@@ -188,30 +188,81 @@ st.caption("Analysis of futures curves, spreads, and historical evolution.")
 tab1, tab2, tab3 = st.tabs(["Outright", "Spread and Fly", "Curve Animation"])
 
 with tab1:
-    st.header(f"Curve Analysis for {single_date}")
+        st.header(f"Curve Analysis for {single_date}")
     s1 = curve_for_date(work_df, contracts, single_date)
     if s1 is None:
         st.error("No data available for the chosen date.")
     else:
+        # =============================
+        # METRICS SECTION
+        # =============================
         st.markdown("##### Key Curve Metrics")
         m_cols = st.columns(3)
-        if len(contracts) > 0: m_cols[0].metric(label=f"Prompt Price ({contracts[0]})", value=f"{s1.get(contracts[0], 0):.2f}")
-        if len(contracts) > 1: m_cols[1].metric(label=f"M1-M2 Spread ({contracts[0]}-{contracts[1]})", value=f"{s1[contracts[0]] - s1[contracts[1]]:.2f}")
-        if len(contracts) > 11: m_cols[2].metric(label=f"M1-M12 Spread ({contracts[0]}-{contracts[11]})", value=f"{s1[contracts[0]] - s1[contracts[11]]:.2f}")
+        if len(contracts) > 0: 
+            m_cols[0].metric(label=f"Prompt Price ({contracts[0]})", value=f"{s1.get(contracts[0], 0):.2f}")
+        if len(contracts) > 1: 
+            m_cols[1].metric(label=f"M1-M2 Spread ({contracts[0]}-{contracts[1]})", value=f"{s1[contracts[0]] - s1[contracts[1]]:.2f}")
+        if len(contracts) > 11: 
+            m_cols[2].metric(label=f"M1-M12 Spread ({contracts[0]}-{contracts[11]})", value=f"{s1[contracts[0]] - s1[contracts[11]]:.2f}")
         
         st.markdown("---")
         col1, col2 = st.columns(2)
+
+        # =============================
+        # SINGLE DATE CURVE
+        # =============================
         with col1:
             st.markdown("##### Single Date Curve")
-            fig_single = overlay_figure(contracts, {single_date: s1}, y_label=("Z-score" if normalize else "Last Price ($)"))
+            fig_single = overlay_figure(
+                contracts, 
+                {single_date: s1}, 
+                y_label=("Z-score" if normalize else "Last Price ($)")
+            )
             st.plotly_chart(fig_single, use_container_width=True, key=f"single_chart_{selected_symbol}")
+
+        # =============================
+        # MULTI-DATE CURVE OVERLAY
+        # =============================
         with col2:
             st.markdown("##### Multi-Date Overlay")
-            valid_curves = {d: s for d, s in {d: curve_for_date(work_df, contracts, d) for d in multi_dates}.items() if s is not None}
-            if not valid_curves: st.warning("No data found for any overlay dates.")
+            valid_curves = {
+                d: s for d, s in {d: curve_for_date(work_df, contracts, d) for d in multi_dates}.items() if s is not None
+            }
+            if not valid_curves: 
+                st.warning("No data found for any overlay dates.")
             else:
-                fig_overlay = overlay_figure(contracts, valid_curves, y_label=("Z-score" if normalize else "Last Price ($)"))
+                fig_overlay = overlay_figure(
+                    contracts, 
+                    valid_curves, 
+                    y_label=("Z-score" if normalize else "Last Price ($)")
+                )
                 st.plotly_chart(fig_overlay, use_container_width=True, key=f"multi_chart_{selected_symbol}")
+
+        # =============================
+        # MULTI-DATE SPREAD OVERLAY (CURVE STYLE)
+        # =============================
+        st.markdown("---")
+        st.markdown("##### Multi-Date Spread Overlay (Curve Style)")
+
+        valid_spread_curves = {}
+        for d in multi_dates:
+            s = curve_for_date(work_df, contracts, d)
+            if s is not None and len(contracts) > 1:
+                spread_curve = {}
+                for i in range(1, len(contracts)):
+                    spread_curve[f"{contracts[0]}-{contracts[i]}"] = s[contracts[0]] - s[contracts[i]]
+                valid_spread_curves[d] = spread_curve
+
+        if not valid_spread_curves:
+            st.warning("No spread curve data found for any overlay dates.")
+        else:
+            fig_spread_overlay = overlay_figure(
+                list(valid_spread_curves[list(valid_spread_curves.keys())[0]].keys()), 
+                valid_spread_curves, 
+                y_label="Spread ($)"
+            )
+            st.plotly_chart(fig_spread_overlay, use_container_width=True, key=f"spread_overlay_{selected_symbol}")
+
 
 with tab2:
     st.header("Spread & Fly Time Series Analysis")
@@ -364,3 +415,4 @@ with tab3:
 
 with st.expander("Preview Raw Data"):
     st.dataframe(df.head(25))
+

@@ -241,27 +241,28 @@ with tab1:
         # =============================
         # MULTI-DATE SPREAD OVERLAY (CURVE STYLE)
         # =============================
-        st.markdown("---")
-        st.markdown("##### Multi-Date Spread Overlay (Curve Style)")
+            st.markdown("---")
+            st.markdown("##### Multi-Date Spread Overlay (Curve Style)")
+        
+            valid_spread_curves = {}
+            for d in multi_dates:
+                s = curve_for_date(work_df, contracts, d)
+                if s is not None and len(contracts) > 1:
+                    spread_curve = {}
+                    for i in range(1, len(contracts)):
+                        spread_curve[f"{contracts[0]}-{contracts[i]}"] = s[contracts[0]] - s[contracts[i]]
+                    valid_spread_curves[d] = pd.Series(spread_curve)   # <-- convert dict → Series
+        
+            if not valid_spread_curves:
+                st.warning("No spread curve data found for any overlay dates.")
+            else:
+                fig_spread_overlay = overlay_figure(
+                    list(valid_spread_curves[list(valid_spread_curves.keys())[0]].index),  # use Series index
+                    valid_spread_curves,
+                    y_label="Spread ($)"
+                )
+                st.plotly_chart(fig_spread_overlay, use_container_width=True, key=f"spread_overlay_{selected_symbol}")
 
-        valid_spread_curves = {}
-        for d in multi_dates:
-            s = curve_for_date(work_df, contracts, d)
-            if s is not None and len(contracts) > 1:
-                spread_curve = {}
-                for i in range(1, len(contracts)):
-                    spread_curve[f"{contracts[0]}-{contracts[i]}"] = s[contracts[0]] - s[contracts[i]]
-                valid_spread_curves[d] = spread_curve
-
-        if not valid_spread_curves:
-            st.warning("No spread curve data found for any overlay dates.")
-        else:
-            fig_spread_overlay = overlay_figure(
-                list(valid_spread_curves[list(valid_spread_curves.keys())[0]].keys()), 
-                valid_spread_curves, 
-                y_label="Spread ($)"
-            )
-            st.plotly_chart(fig_spread_overlay, use_container_width=True, key=f"spread_overlay_{selected_symbol}")
 
 
 with tab2:
@@ -415,5 +416,6 @@ with tab3:
 
 with st.expander("Preview Raw Data"):
     st.dataframe(df.head(25))
+
 
 

@@ -188,7 +188,7 @@ st.caption("Analysis of futures curves, spreads, and historical evolution.")
 tab1, tab2, tab3 = st.tabs(["Outright", "Spread and Fly", "Curve Animation"])
 
 with tab1:
-        st.header(f"Curve Analysis for {single_date}")
+    st.header(f"Curve Analysis for {single_date}")
     s1 = curve_for_date(work_df, contracts, single_date)
     if s1 is None:
         st.error("No data available for the chosen date.")
@@ -415,4 +415,5 @@ with tab3:
 
 with st.expander("Preview Raw Data"):
     st.dataframe(df.head(25))
+
 

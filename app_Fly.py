@@ -46,7 +46,7 @@ def infer_year_from_sheetname(sheet_name: str) -> int:
 def process_sheet(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame | None:
     """
     Robustly processes a single sheet to standardize it for plotting and analysis.
-    This version includes a definitive fix for the 'day is out of range' error.
+    This version includes the definitive fix for the 'day is out of range' error.
     """
     date_candidates = ["date", "time", "day"]
     price_candidates = ["close", "fly", "settle", "price"]
@@ -233,3 +233,4 @@ else:
             st.header("Performance & Volatility Metrics")
             stats_df = calculate_trading_stats(all_sheets_data, selected_sheets)
             st.dataframe(stats_df, use_container_width=True)
+

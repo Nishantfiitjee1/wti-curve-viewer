@@ -200,10 +200,10 @@ with st.sidebar:
 
 all_sheets_data = {}
 # Load built-in data by default, then check for an upload.
-try:
-    all_sheets_data = load_and_process_excel("FLY_CHART.xlsx")
-except FileNotFoundError:
-    if source_option == "Use Built-in Sample":
+if source_option == "Use Built-in Sample":
+    try:
+        all_sheets_data = load_and_process_excel("FLY_CHART.xlsx")
+    except FileNotFoundError:
         st.sidebar.error("Built-in 'FLY_CHART.xlsx' not found. Please ensure it's in the same directory.")
 
 # If user uploads a file, it replaces the built-in data
@@ -233,4 +233,3 @@ else:
             st.header("Performance & Volatility Metrics")
             stats_df = calculate_trading_stats(all_sheets_data, selected_sheets)
             st.dataframe(stats_df, use_container_width=True)
-

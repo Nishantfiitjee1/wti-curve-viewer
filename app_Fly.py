@@ -83,28 +83,39 @@ def process_sheet(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame | None:
         return None
 
     # --- Universal Date Parsing Engine ---
-    processed_df['Date_str'] = processed_df['Date'].astype(str).str.strip()
-    parsed_dates = pd.to_datetime(processed_df['Date_str'], errors='coerce')
+    def robust_date_parser(val, sheet_year):
+    """Universal parser to handle messy Excel dates safely."""
+    if pd.isna(val):
+        return pd.NaT
 
-    # Rescue parser for MM-DD formats
-    failed_mask = parsed_dates.isna()
-    if failed_mask.any():
-        sheet_year = infer_year_from_sheetname(sheet_name)
+    # Try to interpret as Excel serial number
+    try:
+        if str(val).isdigit() and len(str(val)) > 4:
+            return pd.to_datetime("1899-12-30") + pd.to_timedelta(int(val), unit="D")
+    except Exception:
+        pass
 
-        def parse_md_format(val):
-            try:
-                match = re.search(r'(\d{1,2})[./-](\d{1,2})', val)
-                if match:
-                    month, day = int(match.group(1)), int(match.group(2))
-                    return datetime(2000, month, day)  # leap-year safe
-                return pd.NaT
-            except Exception:
-                return pd.NaT
+    val_str = str(val).strip()
 
-        rescued_dates = processed_df.loc[failed_mask, 'Date_str'].apply(parse_md_format)
-        parsed_dates.loc[failed_mask] = rescued_dates.apply(lambda d: safe_assign_year(d, sheet_year))
+    # Try direct parsing
+    for fmt in ["%Y-%m-%d", "%d-%m-%Y", "%m-%d-%Y", "%d/%m/%Y", "%m/%d/%Y", "%Y%m%d"]:
+        try:
+            return datetime.strptime(val_str, fmt)
+        except Exception:
+            continue
 
-    processed_df['Date'] = parsed_dates
+    # Try Month/Day without year (like 2/29 or 4-21)
+    try:
+        match = re.search(r'(\d{1,2})[./-](\d{1,2})', val_str)
+        if match:
+            month, day = int(match.group(1)), int(match.group(2))
+            base_date = datetime(2000, month, day)  # always valid (leap year)
+            return safe_assign_year(base_date, sheet_year)
+    except Exception:
+        pass
+
+    return pd.NaT
+
     processed_df.drop(columns=['Date_str'], inplace=True)
 
     processed_df.dropna(subset=["Date"], inplace=True)

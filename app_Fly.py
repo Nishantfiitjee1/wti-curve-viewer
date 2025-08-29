@@ -64,19 +64,20 @@ def process_sheet(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame | None:
 
     # --- Universal Date Parsing Engine ---
     # Convert date column to string to handle mixed types gracefully.
-    processed_df['Date'] = processed_df['Date'].astype(str)
+    processed_df['Date_str'] = processed_df['Date'].astype(str)
     
-    # Attempt standard date conversion first. It's fast and handles YYYY-MM-DD.
-    parsed_dates = pd.to_datetime(processed_df['Date'], errors='coerce')
+    # Stage 1: Attempt standard date conversion. It's fast and handles YYYY-MM-DD.
+    parsed_dates = pd.to_datetime(processed_df['Date_str'], errors='coerce')
 
-    # If standard parsing fails for most rows, activate the robust MM-DD parser.
-    if parsed_dates.isna().mean() > 0.5:
+    # Stage 2: For rows that failed, activate the robust MM-DD "rescue" parser.
+    failed_mask = parsed_dates.isna()
+    if failed_mask.any():
         sheet_year = infer_year_from_sheetname(sheet_name)
         
         def parse_md_format(val):
             try:
                 # Use regex to find Month/Day patterns like '4/21' or '02-29'
-                match = re.search(r'(\d{1,2})[/-](\d{1,2})', val)
+                match = re.search(r'(\d{1,2})[./-](\d{1,2})', val)
                 if match:
                     month, day = int(match.group(1)), int(match.group(2))
                     # CRITICAL FIX: Use a known leap year (2000) for initial parsing.
@@ -86,22 +87,24 @@ def process_sheet(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame | None:
             except Exception:
                 return pd.NaT
 
-        # Apply the safe MM-DD parser
-        parsed_dates = processed_df['Date'].apply(parse_md_format)
-        processed_df['Date'] = parsed_dates.dropna()
-        if processed_df.empty: return None
-
+        # Apply the safe MM-DD parser ONLY to the failed rows
+        rescued_dates = processed_df.loc[failed_mask, 'Date_str'].apply(parse_md_format)
+        
         # Safely apply the correct year, gracefully handling Feb 29 in non-leap years.
         def apply_correct_year(date):
+            if pd.isna(date): return pd.NaT
             try:
                 return date.replace(year=sheet_year)
             except ValueError:  # This triggers on dates like 29th Feb in a non-leap year
                 if date.month == 2 and date.day == 29:
                     return date.replace(year=sheet_year, day=28) # Fallback to 28th
                 raise
-        processed_df['Date'] = processed_df['Date'].apply(apply_correct_year)
-    else:
-        processed_df['Date'] = parsed_dates
+        
+        # Update the original series with the rescued and year-corrected dates
+        parsed_dates.loc[failed_mask] = rescued_dates.apply(apply_correct_year)
+
+    processed_df['Date'] = parsed_dates
+    processed_df.drop(columns=['Date_str'], inplace=True)
     
     processed_df.dropna(subset=["Date"], inplace=True)
     processed_df.sort_values("Date", inplace=True, ignore_index=True)
@@ -124,7 +127,7 @@ def process_sheet(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame | None:
 
 @st.cache_data(show_spinner="Loading and processing Excel file...")
 def load_and_process_excel(file_source) -> dict[str, pd.DataFrame]:
-    """Loads an Excel file and processes each sheet."""
+    """Loads an Excel file and processes each sheet using the robust engine."""
     try:
         xls = pd.ExcelFile(file_source)
         processed_sheets = {
@@ -196,11 +199,11 @@ with st.sidebar:
     uploaded_file = st.file_uploader("Choose an Excel file", type=["xlsx", "xls"]) if source_option == "Upload Your Excel File" else None
 
 all_sheets_data = {}
-# Load built-in data by default
-if source_option == "Use Built-in Sample":
-    try:
-        all_sheets_data = load_and_process_excel("FLY_CHART.xlsx")
-    except FileNotFoundError:
+# Load built-in data by default, then check for an upload.
+try:
+    all_sheets_data = load_and_process_excel("FLY_CHART.xlsx")
+except FileNotFoundError:
+    if source_option == "Use Built-in Sample":
         st.sidebar.error("Built-in 'FLY_CHART.xlsx' not found. Please ensure it's in the same directory.")
 
 # If user uploads a file, it replaces the built-in data

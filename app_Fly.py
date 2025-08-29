@@ -476,7 +476,7 @@ with st.sidebar:
 # Load data (built-in or uploaded)
 # ---------------------------
 # Default built-in path (should be in /mnt/data in colab environment)
-builtin_path = "/mnt/data/FLY_CHART.xlsx"
+builtin_path = "FLY_CHART.xlsx"
 sheet_dfs = {}
 try:
     if data_source == "upload" and uploaded is not None:

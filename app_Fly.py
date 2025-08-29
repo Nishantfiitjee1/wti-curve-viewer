@@ -246,7 +246,7 @@ def build_overlay_figure(sheet_dfs: dict, picks: list, x_mode: str, rebase_mode:
             x_label = dfx["Date"].dt.strftime("%Y-%m-%d")
             hover_x = x_label
 
-        y_vals = rebase(dfx["Close"], rebase_mode)
+        y_vals = rebase_series(dfx["Close"], rebase_mode)
 
         # add primary
         lw = 4 if focus_sheet == name else 2
@@ -439,7 +439,8 @@ st.markdown("Upload your Excel (or use built-in). App auto-detects Date & Close 
 with st.sidebar:
     st.header("Controls")
 
-    data_source = st.radio("Data Source", options=["built-in", "upload"], index=0, help="Built-in loads provided FLY_CHART.xlsx in /mnt/data; upload allows user file")
+    data_source = st.radio("Data Source", options=["built-in", "upload"], index=0,
+                           help="Built-in loads provided FLY_CHART.xlsx in /mnt/data; upload allows user file")
 
     uploaded = None
     if data_source == "upload":
@@ -447,9 +448,24 @@ with st.sidebar:
 
     # plot options
     st.subheader("Display")
-    x_mode = st.selectbox("X-axis style", ["synthetic", "calendar"], format_func=lambda v: "Synthetic (aligned to first date)" if v == "synthetic" else "Calendar (YYYY-MM-DD)")
-    rebase = st.selectbox("Y-axis transform", options=["none", "first0", "pct", "rebase100"], index=0,
-                          format_func=lambda v: {"none": "Absolute Close", "first0": "Change from first (abs)", "pct": "% Change from first", "rebase100": "Rebase: first=100"}[v])
+    x_mode = st.selectbox(
+        "X-axis style",
+        ["synthetic", "calendar"],
+        format_func=lambda v: "Synthetic (aligned to first date)" if v == "synthetic" else "Calendar (YYYY-MM-DD)"
+    )
+
+    rebase_mode = st.selectbox(
+        "Y-axis transform",
+        options=["none", "first0", "pct", "rebase100"],
+        index=0,
+        format_func=lambda v: {
+            "none": "Absolute Close",
+            "first0": "Change from first (abs)",
+            "pct": "% Change from first",
+            "rebase100": "Rebase: first=100"
+        }[v]
+    )
+
     smooth_win = st.slider("Smoothing (rolling window days)", min_value=1, max_value=15, value=1, step=1)
     ma_choices = st.multiselect("Overlay Moving Averages (days)", options=[5, 10, 20, 50], default=[10])
 
@@ -458,18 +474,13 @@ with st.sidebar:
     show_markers = st.checkbox("Show Markers", value=False)
     focus_sheet = st.selectbox("Focus sheet (thicker)", options=["(none)"], index=0)
 
-    st.subheader("Spread Analysis")
-    enable_spread = st.checkbox("Enable spread calculation (A - B)", value=False)
-    spread_sheet_a = st.selectbox("Spread A (left)", options=["(none)"], index=0)
-    spread_sheet_b = st.selectbox("Spread B (right)", options=["(none)"], index=0)
-    spread_ma = st.selectbox("Spread MA window", options=[None, 5, 10, 20], index=0)
-
     st.subheader("Seasonality")
     enable_seasonality = st.checkbox("Show seasonality charts", value=False)
     season_by_month = st.checkbox("Seasonality aggregated by month (Apr→Mar)", value=True)
 
     st.markdown("---")
     st.caption("Pro tip: Use 'synthetic' X-axis to compare curves starting at different months (e.g., Apr vs Jun) on a common MM-DD timeline.")
+
 
 
 # ---------------------------
@@ -486,7 +497,7 @@ try:
         with open(builtin_path, "rb") as fh:
             sheet_dfs = load_excel_file(BytesIO(fh.read()))
 except FileNotFoundError:
-    st.error("Built-in FLY_CHART.xlsx not found at /mnt/data/FLY_CHART.xlsx. Upload your file or ensure the built-in file exists.")
+    st.error("Built-in FLY_CHART.xlsx not found at FLY_CHART.xlsx. Upload your file or ensure the built-in file exists.")
     st.stop()
 except Exception as e:
     st.error(f"Failed to load Excel: {e}")

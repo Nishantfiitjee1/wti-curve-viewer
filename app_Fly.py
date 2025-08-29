@@ -34,8 +34,8 @@ def find_target_column(columns: list[str], candidates: list[str]) -> str | None:
                 return orig_col
     return None
 
-def infer_year_from_sheetname(sheet_name: str) -> int | None:
-    """Infers the year from the sheet name (e.g., 'CL_25_Fly' -> 2025)."""
+def infer_year_from_sheetname(sheet_name: str) -> int:
+    """Infers the year from the sheet name (e.g., 'CL_25_Fly' -> 2025), defaulting to the current year."""
     match = re.search(r'(20\d{2})|_(\d{2})', sheet_name)
     if match:
         year_part = match.group(1) or match.group(2)
@@ -46,7 +46,7 @@ def infer_year_from_sheetname(sheet_name: str) -> int | None:
 def process_sheet(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame | None:
     """
     Robustly processes a single sheet to standardize it for plotting and analysis.
-    Handles mixed date formats (YYYY-MM-DD and MM/DD) and leap year issues.
+    This version includes a definitive fix for the 'day is out of range' error.
     """
     date_candidates = ["date", "time", "day"]
     price_candidates = ["close", "fly", "settle", "price"]
@@ -62,33 +62,38 @@ def process_sheet(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame | None:
     processed_df.dropna(subset=["Close"], inplace=True)
     if processed_df.empty: return None
 
-    # --- Robust Date Parsing Engine ---
+    # --- Bulletproof Date Parsing Engine ---
+    # Attempt standard date conversion first.
     parsed_dates = pd.to_datetime(processed_df['Date'], errors='coerce')
-    # If standard parsing fails for a majority, switch to custom MM/DD parser
+
+    # If standard parsing fails for most rows, activate the robust MM/DD parser.
     if parsed_dates.isna().mean() > 0.5:
         sheet_year = infer_year_from_sheetname(sheet_name)
         
         def parse_md_format(val):
             try:
+                # Standardize separators and extract parts
                 txt = str(val).strip().replace('-', '/')
                 parts = txt.split('/')
                 month, day = int(parts[0]), int(parts[1])
-                # CRITICAL FIX: Use a leap year (2000) for initial parsing to accept 2/29
+                # CRITICAL FIX: Use a known leap year (2000) for initial parsing.
+                # This ensures '2/29' is always accepted at this stage.
                 return datetime(2000, month, day)
             except Exception:
                 return pd.NaT
 
+        # Apply the safe parser
         parsed_dates = processed_df['Date'].apply(parse_md_format)
         processed_df['Date'] = parsed_dates.dropna()
         if processed_df.empty: return None
 
-        # Safely apply the correct year, adjusting for Feb 29 in non-leap years
+        # Safely apply the correct year, gracefully handling Feb 29 in non-leap years.
         def apply_correct_year(date):
             try:
                 return date.replace(year=sheet_year)
-            except ValueError:
+            except ValueError:  # This triggers on dates like 29th Feb in a non-leap year
                 if date.month == 2 and date.day == 29:
-                    return date.replace(year=sheet_year, day=28)
+                    return date.replace(year=sheet_year, day=28) # Fallback to 28th
                 raise
         processed_df['Date'] = processed_df['Date'].apply(apply_correct_year)
     else:
@@ -131,7 +136,7 @@ def load_and_process_excel(file_source) -> dict[str, pd.DataFrame]:
 # Analysis and Plotting Utilities
 # -----------------------------------------------------------------------------
 
-def create_comparison_chart(data: dict, selected_sheets: list, show_levels: bool):
+def create_comparison_chart(data: dict, selected_sheets: list):
     """Creates the main Plotly chart for comparing fly curves."""
     fig = go.Figure()
     for name in selected_sheets:
@@ -142,10 +147,6 @@ def create_comparison_chart(data: dict, selected_sheets: list, show_levels: bool
             hovertemplate=f"<b>{name}</b><br>Date: %{{customdata|%Y-%m-%d}}<br>Months: %{{x:.2f}}<br>Price: %{{y:.4f}}<extra></extra>",
             customdata=df["Date"]
         ))
-        if show_levels:
-            fig.add_hline(y=df["Close"].iloc[0], line_dash="dot", line_color="grey", annotation_text=f"{name} Start", annotation_position="bottom right")
-            fig.add_hline(y=df["Close"].max(), line_dash="dot", line_color="lightgreen", annotation_text=f"{name} High")
-            fig.add_hline(y=df["Close"].min(), line_dash="dot", line_color="salmon", annotation_text=f"{name} Low")
     fig.update_layout(height=600, title="Fly Curve Comparison", xaxis_title="Months from Start Date", yaxis_title="Close Price", template="plotly_dark")
     return fig
 
@@ -156,16 +157,11 @@ def calculate_trading_stats(data: dict, selected_sheets: list) -> pd.DataFrame:
         df = data.get(name)
         if df is None or len(df) < 2: continue
         
-        # Volatility
         annualized_vol = df['Daily_Return'].std() * np.sqrt(252)
-        
-        # Max Drawdown
         cum_returns = (1 + df['Daily_Return']).cumprod()
         peak = cum_returns.expanding(min_periods=1).max()
         drawdown = (cum_returns/peak) - 1
         max_drawdown = drawdown.min()
-        
-        # Sharpe Ratio (simplified)
         sharpe_ratio = (df['Daily_Return'].mean() / df['Daily_Return'].std()) * np.sqrt(252) if df['Daily_Return'].std() != 0 else 0
 
         stats.append({
@@ -179,36 +175,12 @@ def calculate_trading_stats(data: dict, selected_sheets: list) -> pd.DataFrame:
         })
     return pd.DataFrame(stats).set_index("Sheet")
 
-def create_correlation_heatmap(data: dict, selected_sheets: list) -> go.Figure:
-    """Creates a heatmap of price correlations between the selected curves."""
-    combined_df = pd.DataFrame()
-    for name in selected_sheets:
-        df = data.get(name)
-        if df is not None:
-            # Use a common index based on "Months from Start" to align data
-            temp_df = df.set_index('Months_from_Start')[['Close']].rename(columns={'Close': name})
-            if combined_df.empty:
-                combined_df = temp_df
-            else:
-                combined_df = combined_df.join(temp_df, how='outer')
-    
-    combined_df.interpolate(method='linear', limit_direction='both', inplace=True)
-    corr = combined_df.corr()
-    
-    fig = go.Figure(data=go.Heatmap(
-        z=corr.values, x=corr.columns, y=corr.columns,
-        colorscale='RdBu', zmin=-1, zmax=1,
-        text=corr.values, texttemplate="%{text:.2f}"
-    ))
-    fig.update_layout(title="Price Correlation Matrix", template="plotly_dark")
-    return fig
-
 # -----------------------------------------------------------------------------
 # Main Application UI
 # -----------------------------------------------------------------------------
 
 st.title("📈 Advanced Trading Fly Curve Analyzer")
-st.markdown("An intelligent tool to analyze and compare fly contracts. It automatically handles various data formats and provides advanced trading insights.")
+st.markdown("An intelligent tool to analyze and compare fly contracts. It automatically handles various data formats and provides key trading insights.")
 
 with st.sidebar:
     st.header("⚙️ Controls")
@@ -220,12 +192,14 @@ with st.sidebar:
     uploaded_file = st.file_uploader("Choose an Excel file", type=["xlsx", "xls"]) if source_option == "Upload Your Excel File" else None
 
 all_sheets_data = {}
-if source_option == "Use Built-in Sample":
-    try:
-        all_sheets_data = load_and_process_excel("FLY_CHART.xlsx")
-    except FileNotFoundError:
-        st.error("Built-in 'FLY_CHART.xlsx' not found. Please ensure it's in the same directory.")
-elif uploaded_file:
+# Load built-in data by default
+try:
+    all_sheets_data = load_and_process_excel("FLY_CHART.xlsx")
+except FileNotFoundError:
+    st.sidebar.error("Built-in 'FLY_CHART.xlsx' not found. Please ensure it's in the same directory.")
+
+# If user uploads a file, it replaces the built-in data
+if uploaded_file:
     all_sheets_data = load_and_process_excel(uploaded_file)
 
 if not all_sheets_data:
@@ -234,29 +208,20 @@ else:
     sheet_names = list(all_sheets_data.keys())
     with st.sidebar:
         st.markdown("---")
-        st.header("📊 Chart Options")
+        st.header("📊 Analysis Options")
         selected_sheets = st.multiselect("Select Sheets to Analyze", sheet_names, default=sheet_names[:min(len(sheet_names), 5)])
-        show_levels = st.checkbox("Show High/Low/Start Levels", value=False, help="Draws horizontal lines for key price levels on the main chart.")
 
     if not selected_sheets:
         st.info("👈 Please select at least one sheet from the sidebar to display the analysis.")
     else:
-        tab1, tab2, tab3 = st.tabs(["📈 Curve Comparison", "📊 Statistics & Volatility", "🔗 Correlation Analysis"])
+        tab1, tab2 = st.tabs(["📈 Curve Comparison", "📊 Statistics & Volatility"])
         
         with tab1:
             st.header("Price Curve Comparison")
-            chart = create_comparison_chart(all_sheets_data, selected_sheets, show_levels)
+            chart = create_comparison_chart(all_sheets_data, selected_sheets)
             st.plotly_chart(chart, use_container_width=True)
         
         with tab2:
             st.header("Performance & Volatility Metrics")
             stats_df = calculate_trading_stats(all_sheets_data, selected_sheets)
-            st.dataframe(stats_df)
-        
-        with tab3:
-            st.header("Correlation Heatmap")
-            if len(selected_sheets) < 2:
-                st.info("Please select at least two sheets to calculate correlation.")
-            else:
-                corr_fig = create_correlation_heatmap(all_sheets_data, selected_sheets)
-                st.plotly_chart(corr_fig, use_container_width=True)
+            st.dataframe(stats_df, use_container_width=True)

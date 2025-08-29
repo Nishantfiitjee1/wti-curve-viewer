@@ -62,27 +62,31 @@ def process_sheet(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame | None:
     processed_df.dropna(subset=["Close"], inplace=True)
     if processed_df.empty: return None
 
-    # --- Bulletproof Date Parsing Engine ---
-    # Attempt standard date conversion first.
+    # --- Universal Date Parsing Engine ---
+    # Convert date column to string to handle mixed types gracefully.
+    processed_df['Date'] = processed_df['Date'].astype(str)
+    
+    # Attempt standard date conversion first. It's fast and handles YYYY-MM-DD.
     parsed_dates = pd.to_datetime(processed_df['Date'], errors='coerce')
 
-    # If standard parsing fails for most rows, activate the robust MM/DD parser.
+    # If standard parsing fails for most rows, activate the robust MM-DD parser.
     if parsed_dates.isna().mean() > 0.5:
         sheet_year = infer_year_from_sheetname(sheet_name)
         
         def parse_md_format(val):
             try:
-                # Standardize separators and extract parts
-                txt = str(val).strip().replace('-', '/')
-                parts = txt.split('/')
-                month, day = int(parts[0]), int(parts[1])
-                # CRITICAL FIX: Use a known leap year (2000) for initial parsing.
-                # This ensures '2/29' is always accepted at this stage.
-                return datetime(2000, month, day)
+                # Use regex to find Month/Day patterns like '4/21' or '02-29'
+                match = re.search(r'(\d{1,2})[/-](\d{1,2})', val)
+                if match:
+                    month, day = int(match.group(1)), int(match.group(2))
+                    # CRITICAL FIX: Use a known leap year (2000) for initial parsing.
+                    # This ensures '2/29' is always accepted at this stage.
+                    return datetime(2000, month, day)
+                return pd.NaT
             except Exception:
                 return pd.NaT
 
-        # Apply the safe parser
+        # Apply the safe MM-DD parser
         parsed_dates = processed_df['Date'].apply(parse_md_format)
         processed_df['Date'] = parsed_dates.dropna()
         if processed_df.empty: return None
@@ -180,14 +184,14 @@ def calculate_trading_stats(data: dict, selected_sheets: list) -> pd.DataFrame:
 # -----------------------------------------------------------------------------
 
 st.title("📈 Advanced Trading Fly Curve Analyzer")
-st.markdown("An intelligent tool to analyze and compare fly contracts. It automatically handles various data formats and provides key trading insights.")
+st.markdown("A universal tool to analyze and compare fly contracts from any Excel file. It automatically handles various data formats and provides key trading insights.")
 
 with st.sidebar:
     st.header("⚙️ Controls")
     source_option = st.radio(
         "Select Data Source",
         ("Use Built-in Sample", "Upload Your Excel File"),
-        index=0, help="The built-in sample is always available."
+        index=0, help="The built-in sample (FLY_CHART.xlsx) is always available."
     )
     uploaded_file = st.file_uploader("Choose an Excel file", type=["xlsx", "xls"]) if source_option == "Upload Your Excel File" else None
 
@@ -204,7 +208,7 @@ if uploaded_file:
     all_sheets_data = load_and_process_excel(uploaded_file)
 
 if not all_sheets_data:
-    st.warning("No data loaded. Please select or upload a valid Excel file to begin.")
+    st.warning("No data loaded. Please select a data source from the sidebar to begin analysis.")
 else:
     sheet_names = list(all_sheets_data.keys())
     with st.sidebar:
@@ -226,3 +230,4 @@ else:
             st.header("Performance & Volatility Metrics")
             stats_df = calculate_trading_stats(all_sheets_data, selected_sheets)
             st.dataframe(stats_df, use_container_width=True)
+

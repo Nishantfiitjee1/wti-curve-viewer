@@ -246,7 +246,7 @@ def build_overlay_figure(sheet_dfs: dict, picks: list, x_mode: str, rebase_mode:
             x_label = dfx["Date"].dt.strftime("%Y-%m-%d")
             hover_x = x_label
 
-        y_vals = rebase_series(dfx["Close"], rebase_mode)
+        y_vals = rebase(dfx["Close"], rebase_mode)
 
         # add primary
         lw = 4 if focus_sheet == name else 2

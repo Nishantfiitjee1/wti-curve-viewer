@@ -5,6 +5,7 @@ import streamlit as st
 from io import BytesIO
 from datetime import datetime
 import numpy as np
+import calendar
 
 # -----------------------------------------------------------------------------
 # Page Configuration
@@ -34,6 +35,7 @@ def find_target_column(columns: list[str], candidates: list[str]) -> str | None:
                 return orig_col
     return None
 
+
 def infer_year_from_sheetname(sheet_name: str) -> int:
     """Infers the year from the sheet name (e.g., 'CL_25_Fly' -> 2025), defaulting to the current year."""
     match = re.search(r'(20\d{2})|_(\d{2})', sheet_name)
@@ -42,6 +44,22 @@ def infer_year_from_sheetname(sheet_name: str) -> int:
         year = int(year_part)
         return 2000 + year if year < 100 else year
     return datetime.now().year
+
+
+def safe_assign_year(date, target_year):
+    """Assigns a year safely, adjusting Feb 29 -> Feb 28 if needed."""
+    if pd.isna(date):
+        return pd.NaT
+    try:
+        return date.replace(year=target_year)
+    except ValueError:
+        # Handles Feb 29 in non-leap years
+        if date.month == 2 and date.day == 29:
+            return date.replace(year=target_year, day=28)
+        # Handles invalid dates like 31 April -> fallback to last valid day
+        last_day = calendar.monthrange(target_year, date.month)[1]
+        return date.replace(year=target_year, day=last_day)
+
 
 def process_sheet(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame | None:
     """
@@ -53,62 +71,46 @@ def process_sheet(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame | None:
 
     date_col = find_target_column(df.columns, date_candidates)
     close_col = find_target_column(df.columns, price_candidates)
-    if not date_col or not close_col: return None
+    if not date_col or not close_col:
+        return None
 
     processed_df = df[[date_col, close_col]].copy()
     processed_df.columns = ["Date", "Close"]
     processed_df.dropna(subset=["Date", "Close"], inplace=True)
     processed_df["Close"] = pd.to_numeric(processed_df["Close"], errors='coerce')
     processed_df.dropna(subset=["Close"], inplace=True)
-    if processed_df.empty: return None
+    if processed_df.empty:
+        return None
 
     # --- Universal Date Parsing Engine ---
-    # Convert date column to string to handle mixed types gracefully.
-    processed_df['Date_str'] = processed_df['Date'].astype(str)
-    
-    # Stage 1: Attempt standard date conversion. It's fast and handles YYYY-MM-DD.
+    processed_df['Date_str'] = processed_df['Date'].astype(str).str.strip()
     parsed_dates = pd.to_datetime(processed_df['Date_str'], errors='coerce')
 
-    # Stage 2: For rows that failed, activate the robust MM-DD "rescue" parser.
+    # Rescue parser for MM-DD formats
     failed_mask = parsed_dates.isna()
     if failed_mask.any():
         sheet_year = infer_year_from_sheetname(sheet_name)
-        
+
         def parse_md_format(val):
             try:
-                # Use regex to find Month/Day patterns like '4/21' or '02-29'
                 match = re.search(r'(\d{1,2})[./-](\d{1,2})', val)
                 if match:
                     month, day = int(match.group(1)), int(match.group(2))
-                    # CRITICAL FIX: Use a known leap year (2000) for initial parsing.
-                    # This ensures '2/29' is always accepted at this stage.
-                    return datetime(2000, month, day)
+                    return datetime(2000, month, day)  # leap-year safe
                 return pd.NaT
             except Exception:
                 return pd.NaT
 
-        # Apply the safe MM-DD parser ONLY to the failed rows
         rescued_dates = processed_df.loc[failed_mask, 'Date_str'].apply(parse_md_format)
-        
-        # Safely apply the correct year, gracefully handling Feb 29 in non-leap years.
-        def apply_correct_year(date):
-            if pd.isna(date): return pd.NaT
-            try:
-                return date.replace(year=sheet_year)
-            except ValueError:  # This triggers on dates like 29th Feb in a non-leap year
-                if date.month == 2 and date.day == 29:
-                    return date.replace(year=sheet_year, day=28) # Fallback to 28th
-                raise
-        
-        # Update the original series with the rescued and year-corrected dates
-        parsed_dates.loc[failed_mask] = rescued_dates.apply(apply_correct_year)
+        parsed_dates.loc[failed_mask] = rescued_dates.apply(lambda d: safe_assign_year(d, sheet_year))
 
     processed_df['Date'] = parsed_dates
     processed_df.drop(columns=['Date_str'], inplace=True)
-    
+
     processed_df.dropna(subset=["Date"], inplace=True)
     processed_df.sort_values("Date", inplace=True, ignore_index=True)
-    if processed_df.empty: return None
+    if processed_df.empty:
+        return None
 
     # --- Seasonal Year Rollover Logic ---
     start_month = processed_df["Date"].iloc[0].month
@@ -124,6 +126,7 @@ def process_sheet(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame | None:
     processed_df['Daily_Return'] = processed_df['Close'].pct_change()
 
     return processed_df
+
 
 @st.cache_data(show_spinner="Loading and processing Excel file...")
 def load_and_process_excel(file_source) -> dict[str, pd.DataFrame]:
@@ -148,34 +151,45 @@ def create_comparison_chart(data: dict, selected_sheets: list):
     fig = go.Figure()
     for name in selected_sheets:
         df = data.get(name)
-        if df is None: continue
+        if df is None:
+            continue
+        # Pre-format date strings for hover
+        df['Date_str'] = df['Date'].dt.strftime("%Y-%m-%d")
         fig.add_trace(go.Scatter(
             x=df["Months_from_Start"], y=df["Close"], mode='lines', name=name,
-            hovertemplate=f"<b>{name}</b><br>Date: %{{customdata|%Y-%m-%d}}<br>Months: %{{x:.2f}}<br>Price: %{{y:.4f}}<extra></extra>",
-            customdata=df["Date"]
+            hovertemplate="<b>%{fullData.name}</b><br>Date: %{customdata}<br>Months: %{x:.2f}<br>Price: %{y:.4f}<extra></extra>",
+            customdata=df["Date_str"]
         ))
-    fig.update_layout(height=600, title="Fly Curve Comparison", xaxis_title="Months from Start Date", yaxis_title="Close Price", template="plotly_dark")
+    fig.update_layout(
+        height=600,
+        title="Fly Curve Comparison",
+        xaxis_title="Months from Start Date",
+        yaxis_title="Close Price",
+        template="plotly_dark"
+    )
     return fig
+
 
 def calculate_trading_stats(data: dict, selected_sheets: list) -> pd.DataFrame:
     """Calculates advanced performance and volatility statistics."""
     stats = []
     for name in selected_sheets:
         df = data.get(name)
-        if df is None or len(df) < 2: continue
-        
+        if df is None or len(df) < 2:
+            continue
+
         annualized_vol = df['Daily_Return'].std() * np.sqrt(252)
         cum_returns = (1 + df['Daily_Return']).cumprod()
         peak = cum_returns.expanding(min_periods=1).max()
-        drawdown = (cum_returns/peak) - 1
+        drawdown = (cum_returns / peak) - 1
         max_drawdown = drawdown.min()
-        sharpe_ratio = (df['Daily_Return'].mean() / df['Daily_Return'].std()) * np.sqrt(252) if df['Daily_Return'].std() != 0 else 0
+        sharpe_ratio = (df['Daily_Return'].mean() / df['Daily_Return'].std()) * np.sqrt(252) if df['Daily_Return'].std() != 0 else np.nan
 
         stats.append({
             "Sheet": name,
             "Annualized Volatility": f"{annualized_vol:.2%}",
             "Max Drawdown": f"{max_drawdown:.2%}",
-            "Sharpe Ratio": f"{sharpe_ratio:.2f}",
+            "Sharpe Ratio": f"{sharpe_ratio:.2f}" if not np.isnan(sharpe_ratio) else "NaN",
             "Avg Price": f"{df['Close'].mean():.4f}",
             "Min Price": f"{df['Close'].min():.4f}",
             "Max Price": f"{df['Close'].max():.4f}"
@@ -233,4 +247,3 @@ else:
             st.header("Performance & Volatility Metrics")
             stats_df = calculate_trading_stats(all_sheets_data, selected_sheets)
             st.dataframe(stats_df, use_container_width=True)
-

@@ -1,621 +1,331 @@
-# app.py
 import re
-from datetime import datetime, timedelta
-from io import BytesIO
-
-import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from io import BytesIO
+from datetime import datetime
 
-# ---------------------------
-# Config
-# ---------------------------
-st.set_page_config(page_title="Fly Curve Comparator (Trading)", layout="wide")
-APP_TITLE = "🪁 Fly Curve Comparator — Trading Analysis"
+# -----------------------------------------------------------------------------
+# Page Configuration
+# -----------------------------------------------------------------------------
+st.set_page_config(
+    page_title="Fly Curve Comparator",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# ---------------------------
-# Helpers: column detection & date coercion
-# ---------------------------
-DATE_CANDIDATES = ["date", "trade_date", "dt", "timestamp", "time", "day", "as_of_date"]
-CLOSE_CANDIDATES = ["close", "settlement", "settle", "last", "price", "px_close", "closing_price", "closeprice"]
+# -----------------------------------------------------------------------------
+# Data Loading and Processing Utilities
+#
+# These functions are responsible for loading the Excel file, finding the
+# correct columns, and processing the dates to create a standardized format
+# for plotting.
+# -----------------------------------------------------------------------------
 
-
-def normalize_colname(s: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "", str(s).strip().lower())
-
-
-def find_best_column(cols, candidates):
+def find_target_column(columns: list[str], candidates: list[str]) -> str | None:
     """
-    Return original column name best matching candidates via normalize_colname
+    Finds the best matching column name from a list of candidates.
+    It checks for exact matches first, then for partial matches.
+
+    Args:
+        columns: The list of column names in the DataFrame.
+        candidates: A list of possible names for the target column (e.g., ["date", "timestamp"]).
+
+    Returns:
+        The best matching column name or None if no suitable column is found.
     """
-    norm_map = {normalize_colname(c): c for c in cols}
-    # direct
+    normalized_cols = {col.lower().replace("_", "").replace(" ", ""): col for col in columns}
     for cand in candidates:
-        if cand in norm_map:
-            return norm_map[cand]
-    # fuzzy: any candidate substring in normalized name
-    for c in cols:
-        n = normalize_colname(c)
-        if any(cand in n for cand in candidates):
-            return c
+        if cand in normalized_cols:
+            return normalized_cols[cand]
+    for norm_col, orig_col in normalized_cols.items():
+        if any(cand in norm_col for cand in candidates):
+            return orig_col
     return None
 
-
-def infer_year_from_sheetname(sheet_name: str):
-    """Try to infer a year (4-digit or 2-digit) from sheet name like 'CL_25_Fly' or 'CL_2024'"""
-    m4 = re.search(r"(20\d{2})", sheet_name)
-    if m4:
-        return int(m4.group(1))
-    m2 = re.search(r"(?<!\d)(\d{2})(?!\d)", sheet_name)
-    if m2:
-        yy = int(m2.group(1))
-        # heuristics: 00-35 => 2000-2035
-        if 0 <= yy <= 35:
-            return 2000 + yy
-        return 2000 + yy
+def infer_year_from_sheetname(sheet_name: str) -> int | None:
+    """
+    Infers the year from the sheet name (e.g., 'CL_25_Fly' -> 2025).
+    This is crucial for handling dates that only have month and day.
+    """
+    match = re.search(r'(20\d{2})|_(\d{2})', sheet_name)
+    if match:
+        year_part = match.group(1) or match.group(2)
+        year = int(year_part)
+        if year < 100:
+            return 2000 + year
+        return year
     return None
 
-
-def coerce_dates(series: pd.Series, sheet_year_hint: int | None = None) -> pd.Series:
+def process_sheet(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame | None:
     """
-    Robust date coercion: accepts full dates or month/day-only strings like '4/21'.
-    If year missing, uses sheet_year_hint or tries to infer from parsed dates, or falls back to current year.
+    Processes a single sheet (DataFrame) to standardize it for plotting.
+    - Finds Date and Close columns.
+    - Converts dates to a proper datetime format, inferring the year.
+    - Calculates 'Months_from_Start' for the x-axis.
     """
-    s = series.copy()
-    # quick parse
-    dt = pd.to_datetime(s, errors="coerce", infer_datetime_format=True)
-    if dt.notna().mean() > 0.5:
-        return dt
+    # 1. Find the Date and Close columns using candidate names.
+    date_col = find_target_column(df.columns, ["date", "time", "day"])
+    close_col = find_target_column(df.columns, ["close", "settle", "price"])
 
-    # if many are NaT, try handling yearless forms
-    def parse_one(val):
-        if pd.isna(val):
-            return pd.NaT
-        txt = str(val).strip()
-        if not txt:
-            return pd.NaT
-        # if has 4-digit year
-        if re.search(r"\b\d{4}\b", txt) or re.search(r"\d+/\d+/\d+", txt):
-            try:
-                return pd.to_datetime(txt, errors="coerce")
-            except Exception:
-                return pd.NaT
-        # unify separators
-        txt2 = re.sub(r"[.\-]", "/", txt)
-        parts = txt2.split("/")
-        if len(parts) >= 2:
-            m = parts[0].zfill(2)
-            d = parts[1].zfill(2)
-            year = sheet_year_hint or datetime.now().year
-            try:
-                return datetime(year, int(m), int(d))
-            except Exception:
-                return pd.NaT
-        return pd.NaT
-
-    parsed = s.apply(parse_one)
-    return pd.to_datetime(parsed, errors="coerce")
-
-
-# ---------------------------
-# Load Excel -> standard sheets
-# ---------------------------
-@st.cache_data(show_spinner=False)
-def load_excel_file(file_like) -> dict:
-    """
-    Reads Excel file-like and returns dict: {sheet_name: DataFrame(Date: datetime, Close: float, MM-DD: str)}
-    Auto-detects date & close columns (case/position-insensitive), coerces dates robustly.
-    """
-    xls = pd.ExcelFile(file_like)
-    out = {}
-    for sheet in xls.sheet_names:
-        raw = pd.read_excel(xls, sheet_name=sheet)
-        if raw.empty:
-            continue
-        cols = list(raw.columns)
-
-        # find by name (normalized)
-        date_col = find_best_column(cols, DATE_CANDIDATES)
-        close_col = find_best_column(cols, CLOSE_CANDIDATES)
-
-        # fallback heuristics
-        if date_col is None:
-            # try first datetime-like or first column that converts well
-            best = None
-            max_dt = -1
-            for c in cols:
-                try:
-                    parsed = pd.to_datetime(raw[c], errors="coerce")
-                    n_ok = parsed.notna().sum()
-                    if n_ok > max_dt:
-                        max_dt = n_ok
-                        best = c
-                except Exception:
-                    pass
-            date_col = best
-
-        if close_col is None:
-            # choose numeric-looking column (most numeric values)
-            numeric_scores = {c: pd.to_numeric(raw[c], errors="coerce").notna().sum() for c in cols}
-            sorted_scores = sorted(numeric_scores.items(), key=lambda x: x[1], reverse=True)
-            close_col = sorted_scores[0][0] if sorted_scores else cols[-1]
-
-        # if still missing, skip sheet
-        if date_col is None or close_col is None:
-            continue
-
-        df = raw[[date_col, close_col]].copy()
-        df.columns = ["Date", "Close"]
-
-        # infer sheet-year other
-        hint = infer_year_from_sheetname(sheet)
-        df["Date"] = coerce_dates(df["Date"], hint)
-        df = df.dropna(subset=["Date", "Close"])
-        if df.empty:
-            continue
-
-        # ensure Close numeric
-        df["Close"] = pd.to_numeric(df["Close"], errors="coerce")
-        df = df.dropna(subset=["Close"]).sort_values("Date").reset_index(drop=True)
-
-        # Add MM-DD label for axis (but keep Date for sorting)
-        df["MM-DD"] = df["Date"].dt.strftime("%m-%d")
-
-        out[sheet] = df
-
-    return out
-
-
-# ---------------------------
-# Synthetic alignment & rebase utilities
-# ---------------------------
-def align_to_synthetic(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Given df with Date & Close, map to synthetic timeline where first date of df becomes base at year 2000,
-    and subsequent days are placed cumulatively to preserve original ordering and day gaps.
-    Returns df with 'synthetic_date' and 'md_label' (MM/DD)
-    """
-    dfx = df.copy().dropna(subset=["Date", "Close"])
-    dfx = dfx.sort_values("Date").reset_index(drop=True)
-    if dfx.empty:
-        return dfx
-
-    first = dfx["Date"].iloc[0]
-    base_year = 2000
-    base = datetime(base_year, first.month, first.day)
-
-    syn_dates = []
-    last = first
-    cum_days = 0
-    for dt in dfx["Date"]:
-        delta = (dt - last).days
-        if delta < 0:
-            # year wrap or disorder; treat as positive
-            delta = abs(delta)
-        cum_days += delta
-        syn_dates.append(base + timedelta(days=cum_days))
-        last = dt
-
-    dfx["synthetic_date"] = pd.to_datetime(syn_dates)
-    dfx["md_label"] = dfx["synthetic_date"].dt.strftime("%m-%d")
-    return dfx
-
-
-def rebase(series: pd.Series, mode: str):
-    """mode: 'none'|'first0'|'pct'|'rebase100'"""
-    if series.empty:
-        return series
-    first = series.iloc[0]
-    if pd.isna(first) or first == 0:
-        return series
-    if mode == "first0":
-        return series - first
-    if mode == "pct":
-        return (series / first - 1.0) * 100
-    if mode == "rebase100":
-        return (series / first) * 100
-    return series
-
-
-# ---------------------------
-# Plotting utilities
-# ---------------------------
-def build_overlay_figure(sheet_dfs: dict, picks: list, x_mode: str, rebase_mode: str, ma_windows: list,
-                         smooth_win: int, show_markers: bool, focus_sheet: str | None, show_legend: bool):
-    fig = go.Figure()
-    for name in picks:
-        df = sheet_dfs.get(name)
-        if df is None or df.empty:
-            continue
-
-        if smooth_win > 1:
-            df_plot = df.copy()
-            df_plot["Close"] = df_plot["Close"].rolling(smooth_win, min_periods=1).mean()
-        else:
-            df_plot = df.copy()
-
-        if x_mode == "synthetic":
-            dfx = align_to_synthetic(df_plot)
-            x_vals = dfx["synthetic_date"]
-            x_label = dfx["md_label"]
-            hover_x = dfx["Date"].dt.strftime("%Y-%m-%d")
-        else:
-            dfx = df_plot.copy()
-            x_vals = dfx["Date"]
-            x_label = dfx["Date"].dt.strftime("%Y-%m-%d")
-            hover_x = x_label
-
-        y_vals = rebase(dfx["Close"], rebase_mode)
-
-        # add primary
-        lw = 4 if focus_sheet == name else 2
-        mode = "lines+markers" if show_markers else "lines"
-        fig.add_trace(go.Scatter(
-            x=x_vals,
-            y=y_vals,
-            mode=mode,
-            name=name,
-            line=dict(width=lw),
-            hovertemplate="<b>%{text}</b><br>X: %{customdata[0]}<br>Actual: %{customdata[1]}<br>Y: %{y:.5f}<extra></extra>",
-            text=[name] * len(dfx),
-            customdata=np.stack([x_label, hover_x], axis=-1)
-        ))
-
-        # add moving averages (if any)
-        for window in ma_windows:
-            if window and window > 1:
-                ma = dfx["Close"].rolling(window, min_periods=1).mean()
-                y_ma = rebase(ma, rebase_mode)
-                fig.add_trace(go.Scatter(
-                    x=x_vals,
-                    y=y_ma,
-                    mode="lines",
-                    name=f"{name} MA{window}",
-                    line=dict(width=1.5, dash="dash")
-                ))
-
-    # layout
-    y_title = {
-        "none": "Close",
-        "first0": "Change from first (abs)",
-        "pct": "% change from first",
-        "rebase100": "Rebased (first=100)"
-    }.get(rebase_mode, "Close")
-
-    x_title = "Synthetic MM-DD (aligned)" if x_mode == "synthetic" else "Calendar Date (YYYY-MM-DD)"
-    fig.update_layout(
-        template="plotly_dark",
-        height=620,
-        title="Fly Curves — Overlay",
-        xaxis=dict(title=x_title, showgrid=True),
-        yaxis=dict(title=y_title, showgrid=True),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0.0, bgcolor="rgba(0,0,0,0)") if show_legend else dict(visible=False),
-        margin=dict(l=10, r=10, t=60, b=10)
-    )
-    return fig
-
-
-def build_spread_figure(sheet_dfs: dict, sheet_a: str, sheet_b: str, ma_window: int | None, x_mode: str, smooth_win: int):
-    """
-    Build a figure for spread = A - B (interpolates based on Date index)
-    We will merge on actual Date via an outer join and compute difference.
-    """
-    a = sheet_dfs.get(sheet_a)
-    b = sheet_dfs.get(sheet_b)
-    if a is None or b is None:
-        return None, None
-
-    # prepare copies and smoothing
-    A = a.copy().sort_values("Date").reset_index(drop=True)
-    B = b.copy().sort_values("Date").reset_index(drop=True)
-    if smooth_win > 1:
-        A["Close"] = A["Close"].rolling(smooth_win, min_periods=1).mean()
-        B["Close"] = B["Close"].rolling(smooth_win, min_periods=1).mean()
-
-    merged = pd.merge(A[["Date", "Close"]].rename(columns={"Close": f"Close_{sheet_a}"}),
-                      B[["Date", "Close"]].rename(columns={"Close": f"Close_{sheet_b}"}),
-                      on="Date", how="outer").sort_values("Date").reset_index(drop=True)
-
-    # forward/back fill to align - or leave gaps? Using linear interpolation for fairness
-    merged[f"Close_{sheet_a}"] = merged[f"Close_{sheet_a}"].interpolate().ffill().bfill()
-    merged[f"Close_{sheet_b}"] = merged[f"Close_{sheet_b}"].interpolate().ffill().bfill()
-
-    merged["Spread"] = merged[f"Close_{sheet_a}"] - merged[f"Close_{sheet_b}"]
-
-    if ma_window and ma_window > 1:
-        merged[f"MA{ma_window}_Spread"] = merged["Spread"].rolling(ma_window, min_periods=1).mean()
-
-    # x values
-    if x_mode == "synthetic":
-        # create synthetic aligned axis from first date of merged
-        merged = merged.dropna(subset=["Date"])
-        syn = align_to_synthetic(merged.rename(columns={"Date": "Date", "Spread": "Close"}))
-        x_vals = syn["synthetic_date"]
-        hover_x = syn["actual_date"].dt.strftime("%Y-%m-%d")
-        y_vals = syn["Close"]
-        merged_for_plot = pd.DataFrame({"x": x_vals, "y": y_vals, "actual": hover_x})
-        if ma_window:
-            merged_for_plot["ma"] = syn["Close"].rolling(ma_window, min_periods=1).mean()
-    else:
-        x_vals = merged["Date"]
-        hover_x = merged["Date"].dt.strftime("%Y-%m-%d")
-        y_vals = merged["Spread"]
-        merged_for_plot = pd.DataFrame({"x": x_vals, "y": y_vals, "actual": hover_x})
-        if ma_window:
-            merged_for_plot["ma"] = merged["Spread"].rolling(ma_window, min_periods=1).mean()
-
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=merged_for_plot["x"], y=merged_for_plot["y"], mode="lines", name=f"{sheet_a} - {sheet_b}"))
-    if ma_window:
-        fig.add_trace(go.Scatter(x=merged_for_plot["x"], y=merged_for_plot["ma"], mode="lines", name=f"MA{ma_window} of Spread", line=dict(dash="dash")))
-    fig.update_layout(title=f"Spread: {sheet_a} - {sheet_b}", template="plotly_dark", height=520,
-                      xaxis_title="Synthetic MM-DD" if x_mode == "synthetic" else "Calendar Date", yaxis_title="Spread")
-    return fig, merged
-
-
-def seasonality_chart(sheet_dfs: dict, sheet_name: str, group_by_months: bool = True):
-    """
-    Build a seasonality chart: aggregate the same MM-DD or month across different years.
-    - If group_by_months=True => show average per month across years (Apr->Mar properly aligned)
-    - Else show average per MM-DD (may be many unique days)
-    """
-    df = sheet_dfs.get(sheet_name)
-    if df is None or df.empty:
+    if not date_col or not close_col:
         return None
 
-    d = df.copy()
-    d["year"] = d["Date"].dt.year
-    d["mmdd"] = d["Date"].dt.strftime("%m-%d")
-    d["month"] = d["Date"].dt.month
+    # 2. Create a clean DataFrame with just the essential columns.
+    processed_df = df[[date_col, close_col]].copy()
+    processed_df.columns = ["Date", "Close"]
 
-    # Align Apr-Mar -> treat months <4 as next year for seasonal roll
-    d.loc[d["month"] < 4, "year_roll"] = d.loc[d["month"] < 4, "year"] + 1
-    d.loc[d["month"] >= 4, "year_roll"] = d.loc[d["month"] >= 4, "year"]
-    d["season_year"] = d["year_roll"].astype(int)
+    # 3. Handle missing values and ensure 'Close' is numeric.
+    processed_df.dropna(subset=["Date", "Close"], inplace=True)
+    processed_df["Close"] = pd.to_numeric(processed_df["Close"], errors='coerce')
+    processed_df.dropna(subset=["Close"], inplace=True)
 
-    if group_by_months:
-        # compute mean per season month (Apr -> Mar)
-        # create an ordered month list starting at Apr
-        order = list(range(4, 13)) + list(range(1, 4))
-        agg = d.groupby([d["season_year"], d["month"]])["Close"].mean().reset_index()
-        # pivot: columns season_year; index month
-        pivot = agg.pivot(index="month", columns="season_year", values="Close").reindex(order)
-        # labels
-        x_labels = [datetime(2000, m, 1).strftime("%b") for m in pivot.index]
-        fig = go.Figure()
-        for col in pivot.columns:
-            fig.add_trace(go.Scatter(x=x_labels, y=pivot[col].values, mode="lines+markers", name=str(col)))
-        fig.update_layout(title=f"Seasonality by Month — {sheet_name} (Apr→Mar)", template="plotly_dark", height=520,
-                          xaxis_title="Season Month (Apr→Mar)", yaxis_title="Avg Close")
-        return fig
-    else:
-        # group by mmdd — may be many points; show average across season years
-        agg = d.groupby(["mmdd", "season_year"])["Close"].mean().reset_index()
-        # pivot with mmdd as index sorted by synthetic alignment starting from earliest observed mmdd
-        # We'll sort mmdd by calendar order starting Apr
-        mm = sorted(agg["mmdd"].unique(), key=lambda x: (int(x.split("-")[0]), int(x.split("-")[1])))
-        pivot = agg.pivot(index="mmdd", columns="season_year", values="Close").reindex(mm)
-        fig = go.Figure()
-        for col in pivot.columns:
-            fig.add_trace(go.Scatter(x=pivot.index, y=pivot[col].values, mode="lines", name=str(col)))
-        fig.update_layout(title=f"Seasonality by MM-DD — {sheet_name}", template="plotly_dark", height=520,
-                          xaxis_title="MM-DD", yaxis_title="Avg Close")
-        return fig
+    if processed_df.empty:
+        return None
 
+    # 4. Convert the 'Date' column to datetime objects.
+    sheet_year = infer_year_from_sheetname(sheet_name) or datetime.now().year
+    
+    def parse_date(d):
+        try:
+            # Assumes format like '4/21' or '2024-04-21'
+            dt = pd.to_datetime(d, infer_datetime_format=True)
+            if dt.year == datetime.now().year and sheet_year != datetime.now().year:
+                 # If pandas defaults to current year, replace with inferred year
+                 return dt.replace(year=sheet_year)
+            return dt
+        except (ValueError, TypeError):
+             # Handle cases like 'MM/DD' strings without a year
+            try:
+                parts = str(d).split('/')
+                month, day = int(parts[0]), int(parts[1])
+                # A new season starts in April. If month is before April, it belongs to the next calendar year.
+                year_offset = 1 if month < 4 else 0
+                return datetime(sheet_year + year_offset, month, day)
+            except Exception:
+                return pd.NaT
 
-# ---------------------------
-# Stats & utility
-# ---------------------------
-def compute_basic_stats(sheet_dfs: dict, picks: list):
-    rows = []
-    for name in picks:
-        df = sheet_dfs.get(name)
-        if df is None or df.empty:
+    processed_df["Date"] = processed_df["Date"].apply(parse_date)
+    processed_df.dropna(subset=["Date"], inplace=True)
+    processed_df.sort_values("Date", inplace=True)
+    
+    if processed_df.empty:
+        return None
+
+    # 5. Calculate the X-axis value: "Months from Start"
+    start_date = processed_df["Date"].iloc[0]
+    processed_df["Months_from_Start"] = (processed_df["Date"] - start_date).dt.days / 30.44
+
+    return processed_df
+
+@st.cache_data(show_spinner="Loading and processing Excel file...")
+def load_and_process_excel(file_source) -> dict[str, pd.DataFrame]:
+    """
+    Loads an Excel file and processes each sheet.
+
+    Args:
+        file_source: A file-like object (from upload) or a file path (for built-in).
+
+    Returns:
+        A dictionary where keys are sheet names and values are processed DataFrames.
+    """
+    try:
+        xls = pd.ExcelFile(file_source)
+        processed_sheets = {}
+        for sheet_name in xls.sheet_names:
+            df = pd.read_excel(xls, sheet_name=sheet_name)
+            processed_df = process_sheet(df, sheet_name)
+            if processed_df is not None and not processed_df.empty:
+                processed_sheets[sheet_name] = processed_df
+        return processed_sheets
+    except Exception as e:
+        st.error(f"An error occurred while reading the Excel file: {e}")
+        return {}
+
+# -----------------------------------------------------------------------------
+# Plotting Utilities
+# -----------------------------------------------------------------------------
+
+def create_comparison_chart(data: dict[str, pd.DataFrame], selected_sheets: list[str], ma_windows: list[int], focus_sheet: str | None):
+    """
+    Creates the main Plotly chart for comparing fly curves.
+    """
+    fig = go.Figure()
+
+    for name in selected_sheets:
+        df = data.get(name)
+        if df is None:
             continue
-        vals = df["Close"]
-        rows.append({
-            "Sheet": name,
-            "Start Date": df["Date"].min().strftime("%Y-%m-%d"),
-            "End Date": df["Date"].max().strftime("%Y-%m-%d"),
-            "Start": vals.iloc[0],
-            "End": vals.iloc[-1],
-            "Mean": vals.mean(),
-            "StdDev": vals.std(),
-            "Min": vals.min(),
-            "Max": vals.max(),
-            "Pct Change": (vals.iloc[-1] / vals.iloc[0] - 1.0) * 100.0 if vals.iloc[0] != 0 else np.nan,
-        })
-    return pd.DataFrame(rows).set_index("Sheet")
 
+        # Determine line style for focused vs. other sheets
+        line_width = 4 if name == focus_sheet else 2
+        opacity = 1.0 if name == focus_sheet else 0.8
 
-# ---------------------------
-# App UI
-# ---------------------------
-st.title(APP_TITLE)
-st.markdown("Upload your Excel (or use built-in). App auto-detects Date & Close columns and provides trading analysis tools.")
+        # Add the primary closing price curve
+        fig.add_trace(go.Scatter(
+            x=df["Months_from_Start"],
+            y=df["Close"],
+            mode='lines',
+            name=name,
+            line=dict(width=line_width),
+            opacity=opacity,
+            hovertemplate=(
+                f"<b>{name}</b><br>"
+                "Date: %{customdata|%Y-%m-%d}<br>"
+                "Months: %{x:.2f}<br>"
+                "Close: %{y:.4f}<extra></extra>"
+            ),
+            customdata=df["Date"]
+        ))
 
-# Sidebar controls
+        # Add Moving Averages for the primary curve
+        for window in ma_windows:
+            if window > 1:
+                ma_series = df["Close"].rolling(window=window, min_periods=1).mean()
+                fig.add_trace(go.Scatter(
+                    x=df["Months_from_Start"],
+                    y=ma_series,
+                    mode='lines',
+                    name=f"{name} {window}-day MA",
+                    line=dict(width=1.5, dash='dash'),
+                    opacity=0.7,
+                    visible='legendonly' # Initially hide MAs to keep the chart clean
+                ))
+    
+    # --- Figure Layout and Styling ---
+    fig.update_layout(
+        height=600,
+        title="Fly Curve Comparison",
+        xaxis_title="Months from Start Date",
+        yaxis_title="Close Price",
+        template="plotly_dark",
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        ),
+        margin=dict(l=20, r=20, t=50, b=20)
+    )
+    
+    return fig
+
+# -----------------------------------------------------------------------------
+# Main Application UI
+# -----------------------------------------------------------------------------
+
+# --- Title and Introduction ---
+st.title("Trading Fly Curve Comparator")
+st.markdown("This tool visualizes and compares the price evolution of different 'fly' contracts over their lifecycle. Upload your Excel file or use the built-in sample data to get started.")
+
+# --- Sidebar Controls ---
 with st.sidebar:
-    st.header("Controls")
+    st.header("⚙️ Controls")
 
-    data_source = st.radio("Data Source", options=["built-in", "upload"], index=0,
-                           help="Built-in loads provided FLY_CHART.xlsx in /mnt/data; upload allows user file")
-
-    uploaded = None
-    if data_source == "upload":
-        uploaded = st.file_uploader("Upload Excel (.xlsx) with sheets", type=["xlsx", "xls"], accept_multiple_files=False)
-
-    # plot options
-    st.subheader("Display")
-    x_mode = st.selectbox(
-        "X-axis style",
-        ["synthetic", "calendar"],
-        format_func=lambda v: "Synthetic (aligned to first date)" if v == "synthetic" else "Calendar (YYYY-MM-DD)"
+    # 1. Data Source Selection
+    source_option = st.radio(
+        "Select Data Source",
+        ("Use Built-in Sample", "Upload Your Excel File"),
+        help="The built-in sample contains historical data. Or, you can upload your own .xlsx file."
     )
 
-    rebase_mode = st.selectbox(
-        "Y-axis transform",
-        options=["none", "first0", "pct", "rebase100"],
-        index=0,
-        format_func=lambda v: {
-            "none": "Absolute Close",
-            "first0": "Change from first (abs)",
-            "pct": "% Change from first",
-            "rebase100": "Rebase: first=100"
-        }[v]
-    )
+    uploaded_file = None
+    if source_option == "Upload Your Excel File":
+        uploaded_file = st.file_uploader(
+            "Choose an Excel file",
+            type=["xlsx", "xls"]
+        )
 
-    smooth_win = st.slider("Smoothing (rolling window days)", min_value=1, max_value=15, value=1, step=1)
-    ma_choices = st.multiselect("Overlay Moving Averages (days)", options=[5, 10, 20, 50], default=[10])
+    # 2. Load and process the data based on the selected source.
+    all_sheets_data = {}
+    if source_option == "Use Built-in Sample":
+        try:
+            # This path assumes the script is run in an environment where the file exists.
+            all_sheets_data = load_and_process_excel("FLY_CHART.xlsx")
+        except FileNotFoundError:
+            st.error("The built-in 'FLY_CHART.xlsx' was not found. Please upload a file instead.")
+    elif uploaded_file:
+        all_sheets_data = load_and_process_excel(uploaded_file)
 
-    st.subheader("Overlay / Focus")
-    show_legend = st.checkbox("Show Legend", value=True)
-    show_markers = st.checkbox("Show Markers", value=False)
-    focus_sheet = st.selectbox("Focus sheet (thicker)", options=["(none)"], index=0)
+    # If data is loaded, display the rest of the controls.
+    if all_sheets_data:
+        sheet_names = list(all_sheets_data.keys())
+        st.markdown("---")
+        st.header("📊 Chart Options")
 
-    st.subheader("Seasonality")
-    enable_seasonality = st.checkbox("Show seasonality charts", value=False)
-    season_by_month = st.checkbox("Seasonality aggregated by month (Apr→Mar)", value=True)
+        # 3. Sheet Selection for Plotting
+        selected_sheets = st.multiselect(
+            "Select Sheets to Plot",
+            options=sheet_names,
+            default=sheet_names[:min(len(sheet_names), 5)],
+            help="Choose which contracts you want to compare on the chart."
+        )
 
-    st.markdown("---")
-    st.caption("Pro tip: Use 'synthetic' X-axis to compare curves starting at different months (e.g., Apr vs Jun) on a common MM-DD timeline.")
+        # 4. Focus and MA Controls
+        focus_sheet = st.selectbox(
+            "Highlight a Curve",
+            options=[None] + selected_sheets,
+            format_func=lambda x: "None" if x is None else x,
+            help="Select a curve to make it thicker and more prominent."
+        )
 
-
-
-# ---------------------------
-# Load data (built-in or uploaded)
-# ---------------------------
-# Default built-in path (should be in /mnt/data in colab environment)
-builtin_path = "FLY_CHART.xlsx"
-sheet_dfs = {}
-try:
-    if data_source == "upload" and uploaded is not None:
-        sheet_dfs = load_excel_file(uploaded)
+        ma_windows = st.multiselect(
+            "Add Moving Averages (days)",
+            options=[5, 10, 20, 50, 100],
+            default=[],
+            help="Select moving average windows. These will be added but hidden by default; click the legend to show them."
+        )
     else:
-        # load built-in
-        with open(builtin_path, "rb") as fh:
-            sheet_dfs = load_excel_file(BytesIO(fh.read()))
-except FileNotFoundError:
-    st.error("Built-in FLY_CHART.xlsx not found at FLY_CHART.xlsx. Upload your file or ensure the built-in file exists.")
-    st.stop()
-except Exception as e:
-    st.error(f"Failed to load Excel: {e}")
-    st.stop()
+        st.info("Please upload an Excel file to begin analysis.")
 
-if not sheet_dfs:
-    st.warning("No sheets detected or no valid Date/Close columns found. Please check your file.")
-    st.stop()
-
-sheet_names = list(sheet_dfs.keys())
-
-# Update spread selectors choices (dependent on loaded sheets)
-# (we can't update the sidebar selectboxes after creation, so we instead create small selects below if spread enabled)
-# Main selection area
-st.markdown("### Select sheets to compare")
-default_picks = sheet_names if len(sheet_names) <= 6 else sheet_names[:6]
-picks = st.multiselect("Pick sheets (overlay)", options=sheet_names, default=default_picks)
-
-if focus_sheet == "(none)":
-    focus_sheet = None
-
-# show quick metrics
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.metric("Sheets loaded", len(sheet_names))
-with col2:
-    nrows_total = sum(len(df) for df in sheet_dfs.values())
-    st.metric("Total rows", nrows_total)
-with col3:
-    all_first = [df["Date"].min() for df in sheet_dfs.values()]
-    all_last = [df["Date"].max() for df in sheet_dfs.values()]
-    if all_first and all_last:
-        span_days = (max(all_last) - min(all_first)).days
-        st.metric("Date span (days)", span_days)
-
-# ---------------------------
-# Main overlay plot
-# ---------------------------
-if not picks:
-    st.info("Choose at least one sheet to plot from the multiselect above.")
+# --- Main Page Content ---
+if not all_sheets_data:
+    st.warning("No data loaded. Please select a data source from the sidebar.")
+elif not selected_sheets:
+    st.info("👈 Please select at least one sheet from the sidebar to display the chart.")
 else:
-    overlay_fig = build_overlay_figure(sheet_dfs, picks, x_mode, rebase, ma_choices, smooth_win, show_markers, focus_sheet, show_legend)
-    st.plotly_chart(overlay_fig, use_container_width=True)
+    # --- Display the Main Chart ---
+    st.header("Curve Comparison Chart")
+    chart = create_comparison_chart(all_sheets_data, selected_sheets, ma_windows, focus_sheet)
+    st.plotly_chart(chart, use_container_width=True)
 
-    # Stats
-    st.subheader("📊 Summary Statistics")
-    stats_df = compute_basic_stats(sheet_dfs, picks)
-    st.dataframe(stats_df.style.format({
-        "Start": "{:.6f}", "End": "{:.6f}", "Mean": "{:.6f}", "StdDev": "{:.6f}", "Min": "{:.6f}", "Max": "{:.6f}", "Pct Change": "{:.2f}%"
-    }))
+    # --- Data Summary Section ---
+    with st.expander("Show Data Summary and Export Options"):
+        st.subheader("Summary Statistics")
+        summary_rows = []
+        for name in selected_sheets:
+            df = all_sheets_data.get(name)
+            if df is not None:
+                summary_rows.append({
+                    "Sheet": name,
+                    "Start Date": df["Date"].min().strftime('%Y-%m-%d'),
+                    "End Date": df["Date"].max().strftime('%Y-%m-%d'),
+                    "Duration (Days)": (df["Date"].max() - df["Date"].min()).days,
+                    "Start Price": df["Close"].iloc[0],
+                    "End Price": df["Close"].iloc[-1],
+                    "Min Price": df["Close"].min(),
+                    "Max Price": df["Close"].max(),
+                    "Avg Price": df["Close"].mean(),
+                })
+        
+        summary_df = pd.DataFrame(summary_rows).set_index("Sheet")
+        st.dataframe(summary_df.style.format("{:,.4f}", subset=["Start Price", "End Price", "Min Price", "Max Price", "Avg Price"]))
 
-    # download overlay data (concatenate combined plotting frames)
-    export_rows = []
-    for name in picks:
-        df = sheet_dfs[name].copy()
-        df_to_export = df[["Date", "MM-DD", "Close"]].copy()
-        df_to_export["Sheet"] = name
-        export_rows.append(df_to_export)
-    export_df = pd.concat(export_rows, ignore_index=True)
-    csv_bytes = export_df.to_csv(index=False).encode("utf-8")
-    st.download_button("⬇️ Download overlay CSV (Date, MM-DD, Close, Sheet)", csv_bytes, file_name="fly_overlay_export.csv", mime="text/csv")
-
-# ---------------------------
-# Spread calculation section
-# ---------------------------
-if enable_spread:
-    st.markdown("---")
-    st.subheader("⚖️ Spread Analysis (A - B)")
-    # pick A and B here reliably
-    sp_cols = st.columns(3)
-    with sp_cols[0]:
-        sp_a = st.selectbox("Spread A (left)", options=["(none)"] + sheet_names, index=0)
-    with sp_cols[1]:
-        sp_b = st.selectbox("Spread B (right)", options=["(none)"] + sheet_names, index=0)
-    with sp_cols[2]:
-        sp_ma = st.selectbox("MA window (Spread)", options=[None, 5, 10, 20], index=0)
-
-    if sp_a == "(none)" or sp_b == "(none)":
-        st.info("Select both A and B sheets to compute spread.")
-    elif sp_a == sp_b:
-        st.warning("Pick two different sheets for spread calculation.")
-    else:
-        fig_spread, merged = build_spread_figure(sheet_dfs, sp_a, sp_b, sp_ma, x_mode, smooth_win)
-        if fig_spread is None:
-            st.error("Could not compute spread for the chosen sheets.")
-        else:
-            st.plotly_chart(fig_spread, use_container_width=True)
-            st.markdown("**Spread data preview (first 10 rows)**")
-            st.dataframe(merged.head(10).assign(Date=lambda d: d["Date"].dt.strftime("%Y-%m-%d")))
-            csv_spread = merged.to_csv(index=False).encode("utf-8")
-            st.download_button("⬇️ Download spread CSV", csv_spread, file_name=f"spread_{sp_a}_minus_{sp_b}.csv", mime="text/csv")
-
-# ---------------------------
-# Seasonality analysis
-# ---------------------------
-if enable_seasonality:
-    st.markdown("---")
-    st.subheader("🌀 Seasonality Analysis")
-    sheet_for_season = st.selectbox("Select sheet for seasonality", options=sheet_names, index=0)
-    group_by_months = season_by_month
-
-    fig_seas = seasonality_chart(sheet_dfs, sheet_for_season, group_by_months)
-    if fig_seas is None:
-        st.warning("No data for seasonality on selected sheet.")
-    else:
-        st.plotly_chart(fig_seas, use_container_width=True)
-
-# ---------------------------
-# Footer / Help
-# ---------------------------
-st.markdown("---")
-st.markdown("#### Notes & Tips")
-st.markdown("""
-- The app keeps the full `Date` (YYYY-MM-DD) internally for correct chronological ordering while allowing `MM-DD` display to compare across start months (April→March etc.).
-- Use **Synthetic** X-axis to align different start months on the same MM-DD timeline.
-- **Rebase 100** is useful to compare relative performance from initial level.
-- Spread calculations perform an outer merge on Date and use interpolation to align values before computing A - B.
-- If your incoming data uses `MM-DD` only (no year), the app tries to infer the year from the sheet name (e.g., `CL_25_Fly` → 2025) or defaults to current year.
-""")
-
-st.caption("If you want additional trading features (autodetect breakouts, signal generation, or pair-trade suggestions based on historical correlation/cointegration), tell me and I will add those modules next.")
+        # --- Data Export ---
+        st.subheader("Export Processed Data")
+        export_dfs = []
+        for name in selected_sheets:
+            df = all_sheets_data[name].copy()
+            df['Sheet'] = name
+            export_dfs.append(df)
+        
+        if export_dfs:
+            full_export_df = pd.concat(export_dfs, ignore_index=True)
+            csv_data = full_export_df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="⬇️ Download Data as CSV",
+                data=csv_data,
+                file_name="fly_curve_data_export.csv",
+                mime="text/csv",
+            )

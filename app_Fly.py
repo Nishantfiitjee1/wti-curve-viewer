@@ -299,20 +299,20 @@ def create_relative_weekly_chart(data, selected_sheets):
 # -----------------------------------------------------------------------------
 # --- SIDEBAR SECTION CODE ---
 
+# --- SIDEBAR SECTION CODE ---
+
 with st.sidebar:
     st.header("⚙️ Controls")
 
-    # Step 1: Define your inbuilt Excel files here.
-    # Add as many as you like. The key is the name shown in the dropdown.
-    # The value is the actual filename.
+    # Define your list of inbuilt Excel files.
+    # The key is the display name, and the value is the filename.
     INBUILT_FILES = {
         "April Fly Curve": "APRIL_FLY.xlsx",
         "June Fly Curve": "JUNE_FLY.xlsx",
-        "December Fly Curve": "DECEMBER_FLY.xlsx",
-        # Add more files here, e.g., "September Curve": "SEP_FLY.xlsx"
+        "December Fly Curve": "DEC_FLY.xlsx",
+        "Sample Data (Not Present)": "MISSING_DATA.xlsx" # Example of a file that won't be found
     }
 
-    # Step 2: Update the radio button to include the new dropdown option.
     source_option = st.radio(
         "Select Data Source",
         ("Select Inbuilt File", "Upload Your Excel File"),
@@ -320,8 +320,8 @@ with st.sidebar:
     )
 
     file_to_process = None
-    
-    # Step 3: Add logic to show the dropdown and get the selected filename.
+    all_sheets_data = {} # Initialize as an empty dictionary
+
     if source_option == "Select Inbuilt File":
         selected_file_name = st.selectbox(
             "Choose an inbuilt dataset",
@@ -335,19 +335,24 @@ with st.sidebar:
             type=["xlsx", "xls"]
         )
 
-    # The rest of the logic remains the same.
-    # It loads the data from 'file_to_process' regardless of where it came from.
+    # --- Data Loading Logic with Improved Error Handling ---
     if file_to_process:
         try:
+            # This function will attempt to load the data.
             all_sheets_data = load_and_process_excel(file_to_process)
         except FileNotFoundError:
-            st.error(f"Error: The file '{file_to_process}' was not found.")
-            st.info("Please make sure the inbuilt file is in the same folder as the script.")
+            # *** THIS IS THE NEW PART ***
+            # If the inbuilt file is not found, show the specific message.
+            st.error(f"Data not available for '{file_to_process}'.")
+            st.warning("Please ensure the file exists in the same folder as the script.")
+            # Ensure all_sheets_data remains empty so the app doesn't proceed.
             all_sheets_data = {}
         except Exception as e:
-            # Error is handled within the loading function
-            pass
+            # The loading function already shows an error for other issues.
+            # We just make sure the data is cleared.
+            all_sheets_data = {}
 
+    # This part of the sidebar will only display if data was loaded successfully.
     if all_sheets_data:
         sheet_names = list(all_sheets_data.keys())
         st.markdown("---")

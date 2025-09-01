@@ -14,21 +14,106 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# --- Advanced UI & Dark Mode Styling ---
 st.markdown(
     """
     <style>
-    /* Make the app look more professional */
-    .main { background-color: #0e1117; }
-    h1, h2, h3, h4 { color: #e0e0e0; }
-    .stSidebar { background-color: #1b1f2a; }
-    .stSelectbox, .stMultiSelect, .stRadio, .stFileUploader { color: #ffffff !important; }
+    @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap');
+
+    :root {
+        --color-bg-primary: #121212;
+        --color-bg-secondary: #1E1E1E;
+        --color-sidebar: #151515;
+        --color-primary-accent: #00A3FF;
+        --color-secondary-accent: #8A2BE2;
+        --color-text-primary: #EAEAEA;
+        --color-text-secondary: #B0B0B0;
+        --color-border: #333333;
+    }
+
+    /* General App Styling */
+    body {
+        font-family: 'Roboto', sans-serif;
+        color: var(--color-text-primary);
+    }
+    
+    .main {
+        background-color: var(--color-bg-primary);
+        border-radius: 10px;
+        padding: 2rem;
+    }
+
+    /* Sidebar Styling */
+    .stSidebar {
+        background-color: var(--color-sidebar);
+        border-right: 1px solid var(--color-border);
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+        color: var(--color-text-primary);
+        font-weight: 700;
+    }
+    
+    h1 {
+        color: var(--color-primary-accent);
+        text-align: center;
+        padding-bottom: 1rem;
+        border-bottom: 2px solid var(--color-primary-accent);
+    }
+
+    /* Card Styling */
+    .card {
+        background-color: var(--color-bg-secondary);
+        border-radius: 10px;
+        padding: 25px;
+        margin-top: 20px;
+        box-shadow: 0 4px 12px 0 rgba(0,0,0,0.2);
+        border: 1px solid var(--color-border);
+    }
+    
+    .stRadio > label {
+        background-color: var(--color-bg-secondary);
+        padding: 10px;
+        border-radius: 5px;
+        margin-bottom: 5px;
+    }
+
+    /* Custom Dividers */
+    hr {
+        border: none;
+        height: 1px;
+        background: linear-gradient(to right, transparent, var(--color-border), transparent);
+        margin: 2rem 0;
+    }
+
+    /* Customizing Streamlit Widgets */
+    .stButton > button {
+        background: linear-gradient(45deg, var(--color-primary-accent), var(--color-secondary-accent));
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 5px;
+        font-weight: bold;
+        transition: all 0.3s ease-in-out;
+    }
+    .stButton > button:hover {
+        box-shadow: 0 0 15px var(--color-primary-accent);
+        transform: translateY(-2px);
+    }
+    
+    .stFileUploader label {
+        font-size: 1.1rem;
+        color: var(--color-primary-accent);
+    }
+
     </style>
     """,
     unsafe_allow_html=True
 )
 
+
 # -----------------------------------------------------------------------------
-# Data Loading and Processing Utilities
+# Data Loading and Processing Utilities (UNCHANGED)
 # -----------------------------------------------------------------------------
 
 def find_target_column(columns: list[str], candidates: list[str]) -> str | None:
@@ -114,7 +199,7 @@ def load_and_process_excel(file_source) -> dict[str, pd.DataFrame]:
         return {}
 
 # -----------------------------------------------------------------------------
-# Plotting Utilities
+# Plotting Utilities (UNCHANGED)
 # -----------------------------------------------------------------------------
 
 def create_comparison_chart(data, selected_sheets, ma_windows, focus_sheet):
@@ -205,7 +290,7 @@ def create_weekly_comparison_chart(data, selected_sheets):
     return fig
 
 # -----------------------------------------------------------------------------
-# Main Application UI
+# Main Application UI (Minor changes for styling)
 # -----------------------------------------------------------------------------
 st.title("📊 Trading Fly Curve Comparator")
 
@@ -226,7 +311,7 @@ with st.sidebar:
 
     if all_sheets_data:
         sheet_names = list(all_sheets_data.keys())
-        st.markdown("---")
+        st.markdown("<hr>", unsafe_allow_html=True) # Custom Divider
         st.header("📊 Chart Options")
         selected_sheets = st.multiselect("Select Sheets to Plot",
             options=sheet_names, default=sheet_names[:min(len(sheet_names), 5)])
@@ -236,19 +321,25 @@ with st.sidebar:
             options=[5, 10, 20, 50, 100], default=[])
 
 if not all_sheets_data:
-    st.warning("No data loaded.")
+    st.warning("No data loaded. Please upload a file or use the built-in sample.")
 elif not selected_sheets:
-    st.info("ℹ️ Please select at least one sheet.")
+    st.info("ℹ️ Please select at least one sheet from the sidebar to display a chart.")
 else:
+    # Wrap main content in a card for better visual separation
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    
     view_mode = st.radio("Choose view mode",
         ["Seasonal", "Monthly", "Weekly"], horizontal=True)
+    
     if view_mode == "Seasonal":
         st.subheader("📈 Seasonal Chart")
         st.plotly_chart(create_comparison_chart(all_sheets_data, selected_sheets, ma_windows, focus_sheet), use_container_width=True)
     elif view_mode == "Monthly":
-        st.subheader("📊 Monthly Comparison")
+        st.subheader("🗓️ Monthly Comparison")
         selected_month = st.selectbox("Select Month", list(calendar.month_name)[1:])
         st.plotly_chart(create_monthly_comparison_chart(all_sheets_data, selected_sheets, selected_month), use_container_width=True)
     else:
-        st.subheader("📊 Weekly Comparison")
+        st.subheader("📅 Weekly Comparison")
         st.plotly_chart(create_weekly_comparison_chart(all_sheets_data, selected_sheets), use_container_width=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)

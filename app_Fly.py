@@ -311,8 +311,6 @@ with st.sidebar:
     # The value is the actual filename in your folder.
     INBUILT_FILES = {
         "April Fly Curve": "APRIL_FLY.xlsx",
-        "June Fly Curve": "JUNE_FLY.xlsx",
-        "July Fly Curve (Not Present)": "JULY_FLY.xlsx", # Example of a file that won't be found
         "December Fly Curve": "DEC_FLY.xlsx"
     }
 

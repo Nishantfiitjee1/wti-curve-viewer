@@ -301,16 +301,19 @@ def create_relative_weekly_chart(data, selected_sheets):
 
 # --- SIDEBAR SECTION CODE ---
 
+# --- SIDEBAR SECTION CODE (IMPROVED ERROR HANDLING) ---
+
 with st.sidebar:
     st.header("⚙️ Controls")
 
-    # Define your list of inbuilt Excel files.
-    # The key is the display name, and the value is the filename.
+    # Define your dictionary of inbuilt Excel files.
+    # The key is the user-friendly name for the dropdown.
+    # The value is the actual filename in your folder.
     INBUILT_FILES = {
         "April Fly Curve": "APRIL_FLY.xlsx",
         "June Fly Curve": "JUNE_FLY.xlsx",
-        "December Fly Curve": "DEC_FLY.xlsx",
-        "Sample Data (Not Present)": "MISSING_DATA.xlsx" # Example of a file that won't be found
+        "July Fly Curve (Not Present)": "JULY_FLY.xlsx", # Example of a file that won't be found
+        "December Fly Curve": "DEC_FLY.xlsx"
     }
 
     source_option = st.radio(
@@ -320,14 +323,16 @@ with st.sidebar:
     )
 
     file_to_process = None
-    all_sheets_data = {} # Initialize as an empty dictionary
+    all_sheets_data = {} # Initialize the data dictionary as empty
 
     if source_option == "Select Inbuilt File":
-        selected_file_name = st.selectbox(
+        # Get the user-friendly name selected by the user
+        selected_display_name = st.selectbox(
             "Choose an inbuilt dataset",
             options=list(INBUILT_FILES.keys())
         )
-        file_to_process = INBUILT_FILES[selected_file_name]
+        # Find the corresponding filename to load
+        file_to_process = INBUILT_FILES[selected_display_name]
 
     elif source_option == "Upload Your Excel File":
         file_to_process = st.file_uploader(
@@ -335,24 +340,26 @@ with st.sidebar:
             type=["xlsx", "xls"]
         )
 
-    # --- Data Loading Logic with Improved Error Handling ---
+    # --- Data Loading Logic with New Attractive Error Message ---
     if file_to_process:
         try:
-            # This function will attempt to load the data.
+            # This function will try to load and process the file
             all_sheets_data = load_and_process_excel(file_to_process)
+
         except FileNotFoundError:
-            # *** THIS IS THE NEW PART ***
-            # If the inbuilt file is not found, show the specific message.
-            st.error(f"Data not available for '{file_to_process}'.")
-            st.warning("Please ensure the file exists in the same folder as the script.")
-            # Ensure all_sheets_data remains empty so the app doesn't proceed.
+            # *** THIS IS THE NEW ATTRACTIVE MESSAGE LOGIC ***
+            # If the selected inbuilt file is not found...
+            st.error(f"📂 Data for '{selected_display_name}' is not available.")
+            st.warning(f"Please make sure the file named `'{file_to_process}'` exists in the same folder as the script.")
+            # Important: Keep all_sheets_data empty so the rest of the app knows not to proceed
             all_sheets_data = {}
+        
         except Exception as e:
-            # The loading function already shows an error for other issues.
-            # We just make sure the data is cleared.
+            # Catch any other errors during processing
+            # The load_and_process_excel function already displays an error message
             all_sheets_data = {}
 
-    # This part of the sidebar will only display if data was loaded successfully.
+    # This part of the sidebar will only run if data was loaded successfully
     if all_sheets_data:
         sheet_names = list(all_sheets_data.keys())
         st.markdown("---")

@@ -3,7 +3,6 @@ import calendar
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-from io import BytesIO
 from datetime import datetime
 
 # -----------------------------------------------------------------------------
@@ -13,6 +12,19 @@ st.set_page_config(
     page_title="Fly Curve Comparator",
     layout="wide",
     initial_sidebar_state="expanded"
+)
+
+st.markdown(
+    """
+    <style>
+    /* Make the app look more professional */
+    .main { background-color: #0e1117; }
+    h1, h2, h3, h4 { color: #e0e0e0; }
+    .stSidebar { background-color: #1b1f2a; }
+    .stSelectbox, .stMultiSelect, .stRadio, .stFileUploader { color: #ffffff !important; }
+    </style>
+    """,
+    unsafe_allow_html=True
 )
 
 # -----------------------------------------------------------------------------
@@ -42,7 +54,6 @@ def infer_year_from_sheetname(sheet_name: str) -> int | None:
 def process_sheet(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame | None:
     date_col = find_target_column(df.columns, ["date", "time", "day", "timestamp", "datetime"])
     close_col = find_target_column(df.columns, ["close", "settle", "price", "last", "mid"])
-
     if not date_col or not close_col:
         return None
 
@@ -61,16 +72,15 @@ def process_sheet(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame | None:
     def parse_date(d):
         try:
             dt = pd.to_datetime(d, infer_datetime_format=True, dayfirst=False)
-            # If pandas assumed current year but sheet_name suggests another year, replace it.
             if dt.year == datetime.now().year and sheet_year != datetime.now().year:
                 return dt.replace(year=sheet_year)
             return dt
-        except (ValueError, TypeError):
+        except Exception:
             try:
                 parts = str(d).strip().split('/')
                 if len(parts) >= 2:
                     month, day = int(parts[0]), int(parts[1])
-                    year_offset = 1 if month < 4 else 0  # season starting in April
+                    year_offset = 1 if month < 4 else 0
                     return datetime(sheet_year + year_offset, month, day)
             except Exception:
                 return pd.NaT
@@ -85,10 +95,7 @@ def process_sheet(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame | None:
 
     start_date = processed_df["Date"].iloc[0]
     processed_df["Months_from_Start"] = (processed_df["Date"] - start_date).dt.days / 30.44
-
-    # Reset index for safety
     processed_df = processed_df.reset_index(drop=True)
-
     return processed_df
 
 @st.cache_data(show_spinner="Loading and processing Excel file...")
@@ -110,156 +117,110 @@ def load_and_process_excel(file_source) -> dict[str, pd.DataFrame]:
 # Plotting Utilities
 # -----------------------------------------------------------------------------
 
-def create_comparison_chart(data: dict[str, pd.DataFrame], selected_sheets: list[str], ma_windows: list[int], focus_sheet: str | None):
+def create_comparison_chart(data, selected_sheets, ma_windows, focus_sheet):
     fig = go.Figure()
-
     for name in selected_sheets:
         df = data.get(name)
         if df is None:
             continue
-
         line_width = 4 if name == focus_sheet else 2
         opacity = 1.0 if name == focus_sheet else 0.8
-
         fig.add_trace(go.Scatter(
-            x=df["Months_from_Start"],
-            y=df["Close"],
-            mode='lines',
-            name=name,
-            line=dict(width=line_width),
-            opacity=opacity,
-            hovertemplate=(
-                f"<b>{name}</b><br>"
-                "Date: %{customdata|%Y-%m-%d}<br>"
-                "Months: %{x:.2f}<br>"
-                "Close: %{y:.4f}<extra></extra>"
-            ),
+            x=df["Months_from_Start"], y=df["Close"],
+            mode='lines', name=name,
+            line=dict(width=line_width), opacity=opacity,
+            hovertemplate=(f"<b>{name}</b><br>"
+                           "Date: %{customdata|%Y-%m-%d}<br>"
+                           "Months: %{x:.2f}<br>"
+                           "Close: %{y:.4f}<extra></extra>"),
             customdata=df["Date"]
         ))
-
         for window in ma_windows:
             if window > 1:
                 ma_series = df["Close"].rolling(window=window, min_periods=1).mean()
                 fig.add_trace(go.Scatter(
-                    x=df["Months_from_Start"],
-                    y=ma_series,
-                    mode='lines',
-                    name=f"{name} {window}-day MA",
-                    line=dict(width=1.5, dash='dash'),
-                    opacity=0.7,
+                    x=df["Months_from_Start"], y=ma_series,
+                    mode='lines', name=f"{name} {window}-day MA",
+                    line=dict(width=1.5, dash='dash'), opacity=0.7,
                     visible='legendonly'
                 ))
-
     fig.update_layout(
-        height=600,
-        title="Fly Curve Comparison",
-        xaxis_title="Months from Start Date",
-        yaxis_title="Close Price",
+        height=600, title="Fly Curve Comparison",
+        xaxis_title="Months from Start Date", yaxis_title="Close Price",
         template="plotly_dark",
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
-        ),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         margin=dict(l=20, r=20, t=50, b=20)
     )
-
     return fig
 
-def create_monthly_comparison_chart(data: dict[str, pd.DataFrame], selected_sheets: list[str], selected_month: str):
+def create_monthly_comparison_chart(data, selected_sheets, selected_month):
     fig = go.Figure()
     month_number = list(calendar.month_name).index(selected_month)
-
     for sheet_name in selected_sheets:
         df = data.get(sheet_name)
-        if df is None:
-            continue
-
-        # Ensure Date column is datetime
-        if not pd.api.types.is_datetime64_any_dtype(df["Date"]):
-            df = df.copy()
-            df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-
-        # Filter only rows for selected month
+        if df is None: continue
         df_month = df[df["Date"].dt.month == month_number].copy()
-        if df_month.empty:
-            continue
-
+        if df_month.empty: continue
         df_month["Day"] = df_month["Date"].dt.day
-
-        # Sort by day so lines are correct
         df_month.sort_values("Day", inplace=True)
-
         fig.add_trace(go.Scatter(
-            x=df_month["Day"],
-            y=df_month["Close"],
-            mode="lines+markers",
-            name=sheet_name,
-            hovertemplate=(
-                f"<b>{sheet_name}</b><br>"
-                "Date: %{customdata|%Y-%m-%d}<br>"
-                "Day %{x}<br>"
-                "Close: %{y:.4f}<extra></extra>"
-            ),
-            customdata=df_month["Date"]
+            x=df_month["Day"], y=df_month["Close"], mode="lines+markers",
+            name=sheet_name, customdata=df_month["Date"],
+            hovertemplate=(f"<b>{sheet_name}</b><br>"
+                           "Date: %{customdata|%Y-%m-%d}<br>"
+                           "Day %{x}<br>"
+                           "Close: %{y:.4f}<extra></extra>")
         ))
-
     fig.update_layout(
         title=f"Monthly Comparison – {selected_month}",
-        xaxis_title="Day of Month",
-        yaxis_title="Close Price",
-        template="plotly_dark",
-        height=600,
+        xaxis_title="Day of Month", yaxis_title="Close Price",
+        template="plotly_dark", height=600,
         legend=dict(orientation="h", y=-0.2),
-        margin=dict(l=40, r=40, t=60, b=40),
-        xaxis=dict(tickmode="linear")
+        margin=dict(l=40, r=40, t=60, b=40), xaxis=dict(tickmode="linear")
     )
+    return fig
 
+def create_weekly_comparison_chart(data, selected_sheets):
+    fig = go.Figure()
+    for sheet_name in selected_sheets:
+        df = data.get(sheet_name)
+        if df is None: continue
+        df["Week"] = df["Date"].dt.isocalendar().week
+        weekly_df = df.groupby("Week", as_index=False).mean(numeric_only=True)
+        if weekly_df.empty: continue
+        fig.add_trace(go.Scatter(
+            x=weekly_df["Week"], y=weekly_df["Close"], mode="lines+markers",
+            name=sheet_name,
+            hovertemplate=(f"<b>{sheet_name}</b><br>"
+                           "Week: %{x}<br>"
+                           "Close: %{y:.4f}<extra></extra>")
+        ))
+    fig.update_layout(
+        title="Weekly Comparison (Week 1–52)",
+        xaxis_title="Week Number", yaxis_title="Average Close Price",
+        template="plotly_dark", height=600,
+        legend=dict(orientation="h", y=-0.2),
+        margin=dict(l=40, r=40, t=60, b=40), xaxis=dict(tickmode="linear")
+    )
     return fig
 
 # -----------------------------------------------------------------------------
 # Main Application UI
 # -----------------------------------------------------------------------------
+st.title("📊 Trading Fly Curve Comparator")
 
-# --- Title and Introduction ---
-st.title("Trading Fly Curve Comparator")
-st.markdown(
-    "This tool visualizes and compares the price evolution of different 'fly' contracts over their lifecycle. "
-    "Upload your Excel file or use the built-in sample data to get started."
-)
+selected_sheets, ma_windows, focus_sheet, all_sheets_data = [], [], None, {}
 
-# Predefine these to avoid NameError when no data is loaded
-selected_sheets: list[str] = []
-ma_windows: list[int] = []
-focus_sheet: str | None = None
-all_sheets_data: dict[str, pd.DataFrame] = {}
-
-# --- Sidebar Controls ---
 with st.sidebar:
     st.header("⚙️ Controls")
-
-    source_option = st.radio(
-        "Select Data Source",
-        ("Use Built-in Sample", "Upload Your Excel File"),
-        help="The built-in sample contains historical data. Or, you can upload your own .xlsx file."
-    )
-
+    source_option = st.radio("Select Data Source",
+        ("Use Built-in Sample", "Upload Your Excel File"))
     uploaded_file = None
     if source_option == "Upload Your Excel File":
-        uploaded_file = st.file_uploader(
-            "Choose an Excel file",
-            type=["xlsx", "xls"]
-        )
-
-    # Load and process the data
+        uploaded_file = st.file_uploader("Choose an Excel file", type=["xlsx", "xls"])
     if source_option == "Use Built-in Sample":
-        try:
-            all_sheets_data = load_and_process_excel("FLY_CHART.xlsx")
-        except FileNotFoundError:
-            st.error("The built-in 'FLY_CHART.xlsx' was not found. Please upload a file instead.")
-            all_sheets_data = {}
+        try: all_sheets_data = load_and_process_excel("FLY_CHART.xlsx")
+        except FileNotFoundError: st.error("Built-in sample not found."); all_sheets_data = {}
     elif uploaded_file:
         all_sheets_data = load_and_process_excel(uploaded_file)
 
@@ -267,97 +228,27 @@ with st.sidebar:
         sheet_names = list(all_sheets_data.keys())
         st.markdown("---")
         st.header("📊 Chart Options")
+        selected_sheets = st.multiselect("Select Sheets to Plot",
+            options=sheet_names, default=sheet_names[:min(len(sheet_names), 5)])
+        focus_sheet = st.selectbox("Highlight a Curve", [None] + selected_sheets,
+            format_func=lambda x: "None" if x is None else x)
+        ma_windows = st.multiselect("Add Moving Averages (days)",
+            options=[5, 10, 20, 50, 100], default=[])
 
-        selected_sheets = st.multiselect(
-            "Select Sheets to Plot",
-            options=sheet_names,
-            default=sheet_names[:min(len(sheet_names), 5)],
-            help="Choose which contracts you want to compare on the chart."
-        )
-
-        focus_sheet = st.selectbox(
-            "Highlight a Curve",
-            options=[None] + selected_sheets,
-            format_func=lambda x: "None" if x is None else x,
-            help="Select a curve to make it thicker and more prominent."
-        )
-
-        ma_windows = st.multiselect(
-            "Add Moving Averages (days)",
-            options=[5, 10, 20, 50, 100],
-            default=[],
-            help="Select moving average windows. These will be added but hidden by default; click the legend to show them."
-        )
-    else:
-        st.info("Please upload an Excel file to begin analysis.")
-
-# --- Main Page Content ---
 if not all_sheets_data:
-    st.warning("No data loaded. Please select a data source from the sidebar.")
+    st.warning("No data loaded.")
 elif not selected_sheets:
-    st.info("ℹ️ Please select at least one sheet to visualize.")
+    st.info("ℹ️ Please select at least one sheet.")
 else:
-    view_mode = st.radio(
-        "Choose view mode",
-        ["Seasonal (Months_from_Start)", "Monthly Comparison"],
-        horizontal=True,
-    )
-
-    if view_mode == "Seasonal (Months_from_Start)":
+    view_mode = st.radio("Choose view mode",
+        ["Seasonal", "Monthly", "Weekly"], horizontal=True)
+    if view_mode == "Seasonal":
         st.subheader("📈 Seasonal Chart")
-        fig = create_comparison_chart(all_sheets_data, selected_sheets, ma_windows, focus_sheet)
-        st.plotly_chart(fig, use_container_width=True)
-
+        st.plotly_chart(create_comparison_chart(all_sheets_data, selected_sheets, ma_windows, focus_sheet), use_container_width=True)
+    elif view_mode == "Monthly":
+        st.subheader("📊 Monthly Comparison")
+        selected_month = st.selectbox("Select Month", list(calendar.month_name)[1:])
+        st.plotly_chart(create_monthly_comparison_chart(all_sheets_data, selected_sheets, selected_month), use_container_width=True)
     else:
-        st.subheader("📊 Monthly Comparison Chart")
-        month_options = list(calendar.month_name)[1:]  # Jan–Dec
-        selected_month = st.selectbox("Select Month", month_options, index=0)
-        fig = create_monthly_comparison_chart(all_sheets_data, selected_sheets, selected_month)
-        st.plotly_chart(fig, use_container_width=True)
-
-    # --- Data Summary Section ---
-    with st.expander("Show Data Summary and Export Options"):
-        st.subheader("Summary Statistics")
-        summary_rows = []
-        for name in selected_sheets:
-            df = all_sheets_data.get(name)
-            if df is not None and not df.empty:
-                summary_rows.append({
-                    "Sheet": name,
-                    "Start Date": df["Date"].min().strftime('%Y-%m-%d'),
-                    "End Date": df["Date"].max().strftime('%Y-%m-%d'),
-                    "Duration (Days)": (df["Date"].max() - df["Date"].min()).days,
-                    "Start Price": df["Close"].iloc[0],
-                    "End Price": df["Close"].iloc[-1],
-                    "Min Price": df["Close"].min(),
-                    "Max Price": df["Close"].max(),
-                    "Avg Price": df["Close"].mean(),
-                })
-
-        if summary_rows:
-            summary_df = pd.DataFrame(summary_rows).set_index("Sheet")
-            st.dataframe(summary_df.style.format("{:,.4f}", subset=["Start Price", "End Price", "Min Price", "Max Price", "Avg Price"]))
-        else:
-            st.info("No summary available for selected sheets.")
-
-        # --- Data Export ---
-        st.subheader("Export Processed Data")
-        export_dfs = []
-        for name in selected_sheets:
-            df = all_sheets_data.get(name)
-            if df is not None:
-                copy_df = df.copy()
-                copy_df['Sheet'] = name
-                export_dfs.append(copy_df)
-
-        if export_dfs:
-            full_export_df = pd.concat(export_dfs, ignore_index=True)
-            csv_data = full_export_df.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="⬇️ Download Data as CSV",
-                data=csv_data,
-                file_name="fly_curve_data_export.csv",
-                mime="text/csv",
-            )
-        else:
-            st.info("No data available to export for the selected sheets.")
+        st.subheader("📊 Weekly Comparison")
+        st.plotly_chart(create_weekly_comparison_chart(all_sheets_data, selected_sheets), use_container_width=True)

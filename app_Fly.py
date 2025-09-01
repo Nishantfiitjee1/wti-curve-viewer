@@ -297,34 +297,55 @@ def create_relative_weekly_chart(data, selected_sheets):
 # -----------------------------------------------------------------------------
 # Main Application UI
 # -----------------------------------------------------------------------------
-st.title("📊 Trading Fly Curve Comparator")
-
-selected_sheets, ma_windows, focus_sheet, all_sheets_data = [], [], None, {}
+# --- SIDEBAR SECTION CODE ---
 
 with st.sidebar:
     st.header("⚙️ Controls")
-    source_option = st.radio("Select Data Source",
-        ("Use Built-in Sample", "Upload Your Excel File"), label_visibility="collapsed")
-    
-    uploaded_file = None
-    if source_option == "Upload Your Excel File":
-        uploaded_file = st.file_uploader("Choose an Excel file", type=["xlsx", "xls"])
-    
-    # Data loading logic
-    file_to_process = None
-    if source_option == "Use Built-in Sample":
-        file_to_process = "FLY_CHART.xlsx"
-    elif uploaded_file:
-        file_to_process = uploaded_file
 
+    # Step 1: Define your inbuilt Excel files here.
+    # Add as many as you like. The key is the name shown in the dropdown.
+    # The value is the actual filename.
+    INBUILT_FILES = {
+        "April Fly Curve": "APRIL_FLY.xlsx",
+        "June Fly Curve": "JUNE_FLY.xlsx",
+        "December Fly Curve": "DECEMBER_FLY.xlsx",
+        # Add more files here, e.g., "September Curve": "SEP_FLY.xlsx"
+    }
+
+    # Step 2: Update the radio button to include the new dropdown option.
+    source_option = st.radio(
+        "Select Data Source",
+        ("Select Inbuilt File", "Upload Your Excel File"),
+        label_visibility="collapsed"
+    )
+
+    file_to_process = None
+    
+    # Step 3: Add logic to show the dropdown and get the selected filename.
+    if source_option == "Select Inbuilt File":
+        selected_file_name = st.selectbox(
+            "Choose an inbuilt dataset",
+            options=list(INBUILT_FILES.keys())
+        )
+        file_to_process = INBUILT_FILES[selected_file_name]
+
+    elif source_option == "Upload Your Excel File":
+        file_to_process = st.file_uploader(
+            "Choose an Excel file",
+            type=["xlsx", "xls"]
+        )
+
+    # The rest of the logic remains the same.
+    # It loads the data from 'file_to_process' regardless of where it came from.
     if file_to_process:
         try:
             all_sheets_data = load_and_process_excel(file_to_process)
         except FileNotFoundError:
-            st.error("Built-in sample 'FLY_CHART.xlsx' not found.")
+            st.error(f"Error: The file '{file_to_process}' was not found.")
+            st.info("Please make sure the inbuilt file is in the same folder as the script.")
             all_sheets_data = {}
         except Exception as e:
-            # Error already handled in load_and_process_excel
+            # Error is handled within the loading function
             pass
 
     if all_sheets_data:

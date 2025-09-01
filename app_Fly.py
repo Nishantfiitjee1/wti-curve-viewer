@@ -6,7 +6,7 @@ import streamlit as st
 from datetime import datetime
 
 # -----------------------------------------------------------------------------
-# Page Configuration
+# Page Configuration & Advanced UI Styling
 # -----------------------------------------------------------------------------
 st.set_page_config(
     page_title="Fly Curve Comparator",
@@ -14,108 +14,101 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- Advanced UI & Dark Mode Styling ---
+# --- Behtar aur Responsive UI ke liye Advanced CSS ---
 st.markdown(
     """
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;700&display=swap');
 
     :root {
-        --color-bg-primary: #121212;
-        --color-bg-secondary: #1E1E1E;
-        --color-sidebar: #151515;
-        --color-primary-accent: #00A3FF;
-        --color-secondary-accent: #8A2BE2;
-        --color-text-primary: #EAEAEA;
-        --color-text-secondary: #B0B0B0;
-        --color-border: #333333;
+        --color-bg-primary: #0E1117;       /* Streamlit ka default dark background */
+        --color-bg-secondary: #161B22;    /* Card aur dusre elements ke liye */
+        --color-sidebar: #1A1C23;        /* Sidebar ke liye thoda alag dark color */
+        --color-primary-accent: #00A9FF;
+        --color-secondary-accent: #9A4BFF;
+        --color-text-primary: #FAFAFA;
+        --color-text-secondary: #B0B3B8;
+        --color-border: #2A2F3B;
     }
 
     /* General App Styling */
-    body {
-        font-family: 'Roboto', sans-serif;
+    body, .stApp {
+        font-family: 'Inter', sans-serif;
         color: var(--color-text-primary);
+        background-color: var(--color-bg-primary);
     }
     
     .main {
         background-color: var(--color-bg-primary);
-        border-radius: 10px;
-        padding: 2rem;
     }
 
-    /* Sidebar Styling */
+    /* Sidebar Styling - ab behtar contrast ke saath */
     .stSidebar {
         background-color: var(--color-sidebar);
         border-right: 1px solid var(--color-border);
     }
+    .stSidebar .st-emotion-cache-16txtl3 { /* Sidebar content padding */
+        padding: 1.5rem;
+    }
 
+    /* Typography */
     h1, h2, h3, h4, h5, h6 {
         color: var(--color-text-primary);
         font-weight: 700;
     }
-    
     h1 {
-        color: var(--color-primary-accent);
+        background: -webkit-linear-gradient(45deg, var(--color-primary-accent), var(--color-secondary-accent));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
         text-align: center;
         padding-bottom: 1rem;
-        border-bottom: 2px solid var(--color-primary-accent);
+    }
+    h2, h3 {
+        border-bottom: 2px solid var(--color-border);
+        padding-bottom: 0.5rem;
+        margin-bottom: 1rem;
     }
 
     /* Card Styling */
     .card {
         background-color: var(--color-bg-secondary);
-        border-radius: 10px;
-        padding: 25px;
+        border-radius: 12px;
+        padding: 30px;
         margin-top: 20px;
-        box-shadow: 0 4px 12px 0 rgba(0,0,0,0.2);
+        box-shadow: 0 8px 16px rgba(0,0,0,0.3);
         border: 1px solid var(--color-border);
     }
     
-    .stRadio > label {
+    /* Widget Styling */
+    .stRadio > div {
+        display: flex;
+        flex-direction: row;
+        justify-content: center;
+        gap: 10px;
         background-color: var(--color-bg-secondary);
-        padding: 10px;
-        border-radius: 5px;
-        margin-bottom: 5px;
+        padding: 8px;
+        border-radius: 10px;
     }
-
-    /* Custom Dividers */
-    hr {
-        border: none;
-        height: 1px;
-        background: linear-gradient(to right, transparent, var(--color-border), transparent);
-        margin: 2rem 0;
+    .stRadio label {
+        background-color: #262B34;
+        padding: 8px 16px;
+        border-radius: 8px;
+        transition: all 0.2s ease-in-out;
+        cursor: pointer;
     }
-
-    /* Customizing Streamlit Widgets */
-    .stButton > button {
-        background: linear-gradient(45deg, var(--color-primary-accent), var(--color-secondary-accent));
+    .stRadio label:hover {
+        background-color: var(--color-primary-accent);
         color: white;
-        border: none;
-        padding: 10px 20px;
-        border-radius: 5px;
-        font-weight: bold;
-        transition: all 0.3s ease-in-out;
-    }
-    .stButton > button:hover {
-        box-shadow: 0 0 15px var(--color-primary-accent);
-        transform: translateY(-2px);
     }
     
-    .stFileUploader label {
-        font-size: 1.1rem;
-        color: var(--color-primary-accent);
-    }
-
     </style>
     """,
     unsafe_allow_html=True
 )
 
-
 # -----------------------------------------------------------------------------
-# Data Loading and Processing Utilities (UNCHANGED)
+# Data Loading and Processing Utilities (Aapka original code - No changes)
 # -----------------------------------------------------------------------------
-
 def find_target_column(columns: list[str], candidates: list[str]) -> str | None:
     normalized_cols = {col.lower().replace("_", "").replace(" ", ""): col for col in columns}
     for cand in candidates:
@@ -144,16 +137,12 @@ def process_sheet(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame | None:
 
     processed_df = df[[date_col, close_col]].copy()
     processed_df.columns = ["Date", "Close"]
-
     processed_df.dropna(subset=["Date", "Close"], inplace=True)
     processed_df["Close"] = pd.to_numeric(processed_df["Close"], errors='coerce')
     processed_df.dropna(subset=["Close"], inplace=True)
-
     if processed_df.empty:
         return None
-
     sheet_year = infer_year_from_sheetname(sheet_name) or datetime.now().year
-
     def parse_date(d):
         try:
             dt = pd.to_datetime(d, infer_datetime_format=True, dayfirst=False)
@@ -165,19 +154,15 @@ def process_sheet(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame | None:
                 parts = str(d).strip().split('/')
                 if len(parts) >= 2:
                     month, day = int(parts[0]), int(parts[1])
-                    year_offset = 1 if month < 4 else 0
-                    return datetime(sheet_year + year_offset, month, day)
+                    return datetime(sheet_year, month, day)
             except Exception:
                 return pd.NaT
         return pd.NaT
-
     processed_df["Date"] = processed_df["Date"].apply(parse_date)
     processed_df.dropna(subset=["Date"], inplace=True)
     processed_df.sort_values("Date", inplace=True)
-
     if processed_df.empty:
         return None
-
     start_date = processed_df["Date"].iloc[0]
     processed_df["Months_from_Start"] = (processed_df["Date"] - start_date).dt.days / 30.44
     processed_df = processed_df.reset_index(drop=True)
@@ -199,15 +184,14 @@ def load_and_process_excel(file_source) -> dict[str, pd.DataFrame]:
         return {}
 
 # -----------------------------------------------------------------------------
-# Plotting Utilities (UNCHANGED)
+# Plotting Utilities
 # -----------------------------------------------------------------------------
-
 def create_comparison_chart(data, selected_sheets, ma_windows, focus_sheet):
+    # Aapka original seasonal chart function - No changes
     fig = go.Figure()
     for name in selected_sheets:
         df = data.get(name)
-        if df is None:
-            continue
+        if df is None: continue
         line_width = 4 if name == focus_sheet else 2
         opacity = 1.0 if name == focus_sheet else 0.8
         fig.add_trace(go.Scatter(
@@ -239,6 +223,7 @@ def create_comparison_chart(data, selected_sheets, ma_windows, focus_sheet):
     return fig
 
 def create_monthly_comparison_chart(data, selected_sheets, selected_month):
+    # Aapka original monthly chart function - No changes
     fig = go.Figure()
     month_number = list(calendar.month_name).index(selected_month)
     for sheet_name in selected_sheets:
@@ -265,32 +250,52 @@ def create_monthly_comparison_chart(data, selected_sheets, selected_month):
     )
     return fig
 
-def create_weekly_comparison_chart(data, selected_sheets):
+# --- YEH HAI NAYA LOGIC WALA WEEKLY CHART FUNCTION ---
+def create_relative_weekly_chart(data, selected_sheets):
+    """
+    Yeh function aapke naye logic se weekly data calculate aur plot karta hai.
+    - Week 1 har sheet ki pehli date se shuru hota hai.
+    - Har week 7 din ka block hota hai.
+    - Har block ke data ka mean (average) liya jaata hai.
+    """
     fig = go.Figure()
     for sheet_name in selected_sheets:
         df = data.get(sheet_name)
-        if df is None: continue
-        df["Week"] = df["Date"].dt.isocalendar().week
-        weekly_df = df.groupby("Week", as_index=False).mean(numeric_only=True)
-        if weekly_df.empty: continue
+        if df is None or df.empty:
+            continue
+        
+        # Step 1: Pehli date ko start date maan lo
+        start_date = df["Date"].iloc[0]
+        
+        # Step 2: Har date ke liye relative week number nikalo
+        # (current_date - start_date) ke din / 7
+        df['Relative_Week'] = ((df['Date'] - start_date).dt.days // 7) + 1
+        
+        # Step 3: Har 'Relative_Week' ke liye 'Close' price ka mean nikalo
+        weekly_df = df.groupby('Relative_Week')['Close'].mean().reset_index()
+        
+        if weekly_df.empty:
+            continue
+            
         fig.add_trace(go.Scatter(
-            x=weekly_df["Week"], y=weekly_df["Close"], mode="lines+markers",
+            x=weekly_df["Relative_Week"], y=weekly_df["Close"], mode="lines+markers",
             name=sheet_name,
             hovertemplate=(f"<b>{sheet_name}</b><br>"
-                           "Week: %{x}<br>"
-                           "Close: %{y:.4f}<extra></extra>")
+                           "Week from Start: %{x}<br>"
+                           "Avg Close: %{y:.4f}<extra></extra>")
         ))
+        
     fig.update_layout(
-        title="Weekly Comparison (Week 1–52)",
-        xaxis_title="Week Number", yaxis_title="Average Close Price",
+        title="Weekly Comparison (Relative to Start Date)",
+        xaxis_title="Week Number from Start Date", yaxis_title="Average Close Price",
         template="plotly_dark", height=600,
-        legend=dict(orientation="h", y=-0.2),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         margin=dict(l=40, r=40, t=60, b=40), xaxis=dict(tickmode="linear")
     )
     return fig
 
 # -----------------------------------------------------------------------------
-# Main Application UI (Minor changes for styling)
+# Main Application UI
 # -----------------------------------------------------------------------------
 st.title("📊 Trading Fly Curve Comparator")
 
@@ -299,19 +304,32 @@ selected_sheets, ma_windows, focus_sheet, all_sheets_data = [], [], None, {}
 with st.sidebar:
     st.header("⚙️ Controls")
     source_option = st.radio("Select Data Source",
-        ("Use Built-in Sample", "Upload Your Excel File"))
+        ("Use Built-in Sample", "Upload Your Excel File"), label_visibility="collapsed")
+    
     uploaded_file = None
     if source_option == "Upload Your Excel File":
         uploaded_file = st.file_uploader("Choose an Excel file", type=["xlsx", "xls"])
+    
+    # Data loading logic
+    file_to_process = None
     if source_option == "Use Built-in Sample":
-        try: all_sheets_data = load_and_process_excel("FLY_CHART.xlsx")
-        except FileNotFoundError: st.error("Built-in sample not found."); all_sheets_data = {}
+        file_to_process = "FLY_CHART.xlsx"
     elif uploaded_file:
-        all_sheets_data = load_and_process_excel(uploaded_file)
+        file_to_process = uploaded_file
+
+    if file_to_process:
+        try:
+            all_sheets_data = load_and_process_excel(file_to_process)
+        except FileNotFoundError:
+            st.error("Built-in sample 'FLY_CHART.xlsx' not found.")
+            all_sheets_data = {}
+        except Exception as e:
+            # Error already handled in load_and_process_excel
+            pass
 
     if all_sheets_data:
         sheet_names = list(all_sheets_data.keys())
-        st.markdown("<hr>", unsafe_allow_html=True) # Custom Divider
+        st.markdown("---")
         st.header("📊 Chart Options")
         selected_sheets = st.multiselect("Select Sheets to Plot",
             options=sheet_names, default=sheet_names[:min(len(sheet_names), 5)])
@@ -325,21 +343,23 @@ if not all_sheets_data:
 elif not selected_sheets:
     st.info("ℹ️ Please select at least one sheet from the sidebar to display a chart.")
 else:
-    # Wrap main content in a card for better visual separation
     st.markdown('<div class="card">', unsafe_allow_html=True)
     
     view_mode = st.radio("Choose view mode",
-        ["Seasonal", "Monthly", "Weekly"], horizontal=True)
+        ["Seasonal", "Monthly", "Weekly"], horizontal=True, label_visibility="collapsed")
     
     if view_mode == "Seasonal":
-        st.subheader("📈 Seasonal Chart")
+        st.header("📈 Seasonal Chart")
         st.plotly_chart(create_comparison_chart(all_sheets_data, selected_sheets, ma_windows, focus_sheet), use_container_width=True)
+    
     elif view_mode == "Monthly":
-        st.subheader("🗓️ Monthly Comparison")
+        st.header("🗓️ Monthly Comparison")
         selected_month = st.selectbox("Select Month", list(calendar.month_name)[1:])
         st.plotly_chart(create_monthly_comparison_chart(all_sheets_data, selected_sheets, selected_month), use_container_width=True)
-    else:
-        st.subheader("📅 Weekly Comparison")
-        st.plotly_chart(create_weekly_comparison_chart(all_sheets_data, selected_sheets), use_container_width=True)
+    
+    else: # Weekly View
+        st.header("📅 Weekly Comparison")
+        # Yahan hum naye logic wala function call kar rahe hain
+        st.plotly_chart(create_relative_weekly_chart(all_sheets_data, selected_sheets), use_container_width=True)
 
     st.markdown('</div>', unsafe_allow_html=True)

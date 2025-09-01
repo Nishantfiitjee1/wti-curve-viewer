@@ -211,6 +211,54 @@ def create_comparison_chart(data: dict[str, pd.DataFrame], selected_sheets: list
     
     return fig
 
+def create_monthly_comparison_chart(data, selected_sheets, selected_month):
+    import calendar
+
+    fig = go.Figure()
+
+    # Convert month name to number (1=Jan, 12=Dec)
+    month_number = list(calendar.month_name).index(selected_month)
+
+    for sheet_name in selected_sheets:
+        df = data[sheet_name].copy()
+
+        # Ensure Date is datetime
+        if not pd.api.types.is_datetime64_any_dtype(df["Date"]):
+            df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+
+        # Filter only rows for selected month
+        df_month = df[df["Date"].dt.month == month_number]
+
+        if df_month.empty:
+            continue
+
+        # X-axis = day of month
+        df_month["Day"] = df_month["Date"].dt.day
+
+        fig.add_trace(go.Scatter(
+            x=df_month["Day"],
+            y=df_month["Close"],
+            mode="lines+markers",
+            name=sheet_name,
+            hovertemplate=(
+                f"<b>{sheet_name}</b><br>"
+                "Day %{x}<br>"
+                "Close: %{y:.2f}<extra></extra>"
+            )
+        ))
+
+    fig.update_layout(
+        title=f"Monthly Comparison – {selected_month}",
+        xaxis_title="Day of Month",
+        yaxis_title="Close Price",
+        template="plotly_dark",
+        height=600,
+        legend=dict(orientation="h", y=-0.2),
+        margin=dict(l=40, r=40, t=60, b=40),
+    )
+
+    return fig
+
 # -----------------------------------------------------------------------------
 # Main Application UI
 # -----------------------------------------------------------------------------
@@ -283,12 +331,29 @@ with st.sidebar:
 if not all_sheets_data:
     st.warning("No data loaded. Please select a data source from the sidebar.")
 elif not selected_sheets:
-    st.info("👈 Please select at least one sheet from the sidebar to display the chart.")
+    st.info("ℹ️ Please select at least one sheet to visualize.")
 else:
-    # --- Display the Main Chart ---
-    st.header("Curve Comparison Chart")
-    chart = create_comparison_chart(all_sheets_data, selected_sheets, ma_windows, focus_sheet)
-    st.plotly_chart(chart, use_container_width=True)
+    # Toggle between views
+    view_mode = st.radio(
+        "Choose view mode",
+        ["Seasonal (Months_from_Start)", "Monthly Comparison"],
+        horizontal=True,
+    )
+
+    if view_mode == "Seasonal (Months_from_Start)":
+        st.subheader("📈 Seasonal Chart")
+        fig = create_comparison_chart(data, selected_sheets, ma_windows, focus_sheet)
+        st.plotly_chart(fig, use_container_width=True)
+
+    else:
+        st.subheader("📊 Monthly Comparison Chart")
+        # Month selector
+        month_options = list(calendar.month_name)[1:]  # Jan–Dec
+        selected_month = st.selectbox("Select Month", month_options, index=0)
+
+        fig = create_monthly_comparison_chart(data, selected_sheets, selected_month)
+        st.plotly_chart(fig, use_container_width=True)
+
 
     # --- Data Summary Section ---
     with st.expander("Show Data Summary and Export Options"):

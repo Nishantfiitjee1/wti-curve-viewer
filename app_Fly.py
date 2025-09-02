@@ -8,118 +8,171 @@ from datetime import datetime
 # -----------------------------------------------------------------------------
 # Page Configuration & Advanced UI Styling
 # -----------------------------------------------------------------------------
-st.set_page_config(
-    page_title="Fly Curve Comparator",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# ---------- Theme switcher + robust light/dark CSS ----------
+import streamlit as st
 
-# --- Behtar aur Responsive UI ke liye Advanced CSS ---
-st.markdown(
-    """
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;700&display=swap');
+theme_choice = st.sidebar.selectbox("Theme", ["Auto (system)", "Light", "Dark"], index=0)
 
-    /* Light Theme (default) */
-    :root {
-        --color-bg-primary: #FFFFFF;
-        --color-bg-secondary: #F8F9FA;
-        --color-sidebar: #F1F3F6;
-        --color-primary-accent: #007BFF;
-        --color-secondary-accent: #6F42C1;
-        --color-text-primary: #212529;
-        --color-text-secondary: #495057;
-        --color-border: #DEE2E6;
-    }
+light_css = r"""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;700&display=swap');
 
-    /* Dark Theme (auto-detect if user prefers dark) */
-    @media (prefers-color-scheme: dark) {
-        :root {
-            --color-bg-primary: #0E1117;
-            --color-bg-secondary: #161B22;
-            --color-sidebar: #0E1117;
-            --color-primary-accent: #00A9FF;
-            --color-secondary-accent: #9A4BFF;
-            --color-text-primary: #FAFAFA;
-            --color-text-secondary: #B0B3B8;
-            --color-border: #2A2F3B;
-        }
-    }
+:root {
+  --bg-primary: #FFFFFF;
+  --bg-secondary: #FFFFFF;
+  --sidebar-bg: #F4F6F8;
+  --card-bg: #FFFFFF;
+  --accent-1: #007BFF;
+  --accent-2: #6F42C1;
+  --text-primary: #0F1720;
+  --text-secondary: #475569;
+  --border: #E6E9EE;
+  --shadow: rgba(15,23,42,0.06);
+}
 
-    /* General App Styling */
-    body, .stApp {
-        font-family: 'Inter', sans-serif;
-        color: var(--color-text-primary);
-        background-color: var(--color-bg-primary);
-    }
-    
-    .main {
-        background-color: var(--color-bg-primary);
-    }
+/* App base */
+html, body, .stApp, div[data-testid="stAppViewContainer"], .block-container {
+  background-color: var(--bg-primary) !important;
+  color: var(--text-primary) !important;
+  font-family: 'Inter', sans-serif !important;
+}
 
-    /* Sidebar Styling */
-    .stSidebar {
-        background-color: var(--color-sidebar);
-        border-right: 1px solid var(--color-border);
-    }
-    .stSidebar .st-emotion-cache-16txtl3 {
-        padding: 1.5rem;
-    }
+/* Sidebar */
+div[data-testid="stSidebar"] {
+  background-color: var(--sidebar-bg) !important;
+  border-right: 1px solid var(--border) !important;
+}
 
-    /* Typography */
-    h1, h2, h3, h4, h5, h6 {
-        color: var(--color-text-primary);
-        font-weight: 700;
-    }
-    h1 {
-        background: -webkit-linear-gradient(45deg, var(--color-primary-accent), var(--color-secondary-accent));
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        text-align: center;
-        padding-bottom: 1rem;
-    }
-    h2, h3 {
-        border-bottom: 2px solid var(--color-border);
-        padding-bottom: 0.5rem;
-        margin-bottom: 1rem;
-    }
+/* Card / container styling */
+.block-container .card, .card {
+  background-color: var(--card-bg) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 12px;
+  box-shadow: 0 6px 18px var(--shadow);
+}
 
-    /* Card Styling */
-    .card {
-        background-color: var(--color-bg-secondary);
-        border-radius: 12px;
-        padding: 30px;
-        margin-top: 20px;
-        box-shadow: 0 8px 16px rgba(0,0,0,0.08);
-        border: 1px solid var(--color-border);
-    }
-    
-    /* Widget Styling */
-    .stRadio > div {
-        display: flex;
-        flex-direction: row;
-        justify-content: center;
-        gap: 10px;
-        background-color: var(--color-bg-secondary);
-        padding: 8px;
-        border-radius: 10px;
-    }
-    .stRadio label {
-        background-color: var(--color-bg-primary);
-        padding: 8px 16px;
-        border-radius: 8px;
-        transition: all 0.2s ease-in-out;
-        cursor: pointer;
-        border: 1px solid var(--color-border);
-    }
-    .stRadio label:hover {
-        background-color: var(--color-primary-accent);
-        color: white;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+/* Plotly chart container */
+.stPlotlyChart > div {
+  background-color: var(--card-bg) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 10px !important;
+  padding: 10px !important;
+}
+
+/* Headings */
+h1, h2, h3, h4 {
+  color: var(--text-primary) !important;
+}
+
+/* Buttons */
+.stButton>button, .stDownloadButton>button {
+  background-color: var(--accent-1) !important;
+  color: #fff !important;
+  border-radius: 8px !important;
+  border: none !important;
+}
+
+/* Radio pill style */
+.stRadio > div { background-color: var(--sidebar-bg) !important; padding: 6px; border-radius: 10px; }
+.stRadio label { background: transparent !important; color: var(--text-primary) !important; border: 1px solid var(--border) !important; padding: 6px 12px; border-radius: 8px; }
+
+/* Small text */
+[data-testid="stMarkdownContainer"] p, .css-1v0mbdj p { color: var(--text-secondary) !important; }
+
+/* Make sure Streamlit's header/footer don't show dark bars */
+header, footer { background-color: transparent !important; }
+</style>
+"""
+
+dark_css = r"""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;700&display=swap');
+
+:root {
+  --bg-primary: #0E1117;
+  --bg-secondary: #0F1720;
+  --sidebar-bg: #0B0F14;
+  --card-bg: #111320;
+  --accent-1: #00A9FF;
+  --accent-2: #9A4BFF;
+  --text-primary: #F8FAFC;
+  --text-secondary: #AAB3C2;
+  --border: #1F2937;
+  --shadow: rgba(0,0,0,0.6);
+}
+
+/* App base */
+html, body, .stApp, div[data-testid="stAppViewContainer"], .block-container {
+  background-color: var(--bg-primary) !important;
+  color: var(--text-primary) !important;
+  font-family: 'Inter', sans-serif !important;
+}
+
+/* Sidebar */
+div[data-testid="stSidebar"] {
+  background-color: var(--sidebar-bg) !important;
+  border-right: 1px solid var(--border) !important;
+}
+
+/* Card / container styling */
+.block-container .card, .card {
+  background-color: var(--card-bg) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 12px;
+  box-shadow: 0 6px 18px var(--shadow);
+}
+
+/* Plotly chart container */
+.stPlotlyChart > div {
+  background-color: var(--card-bg) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 10px !important;
+  padding: 10px !important;
+}
+
+/* Headings */
+h1, h2, h3, h4 {
+  color: var(--text-primary) !important;
+}
+
+/* Buttons */
+.stButton>button, .stDownloadButton>button {
+  background-color: var(--accent-1) !important;
+  color: #0b1220 !important;
+  border-radius: 8px !important;
+  border: none !important;
+}
+
+/* Radio pill style */
+.stRadio > div { background-color: var(--sidebar-bg) !important; padding: 6px; border-radius: 10px; }
+.stRadio label { background: transparent !important; color: var(--text-primary) !important; border: 1px solid var(--border) !important; padding: 6px 12px; border-radius: 8px; }
+
+/* Small text */
+[data-testid="stMarkdownContainer"] p, .css-1v0mbdj p { color: var(--text-secondary) !important; }
+
+/* Make sure Streamlit's header/footer don't show white bars */
+header, footer { background-color: transparent !important; }
+</style>
+"""
+
+auto_css = r"""
+<style>
+""" + light_css + r"""
+@media (prefers-color-scheme: dark) {
+""" + dark_css + r"""
+}
+</style>
+"""
+
+# Inject appropriate CSS
+if theme_choice == "Auto (system)":
+    st.markdown(auto_css, unsafe_allow_html=True)
+elif theme_choice == "Light":
+    st.markdown(light_css, unsafe_allow_html=True)
+else:
+    st.markdown(dark_css, unsafe_allow_html=True)
+# --------------------------------------------------------------
+
 
 
 # -----------------------------------------------------------------------------

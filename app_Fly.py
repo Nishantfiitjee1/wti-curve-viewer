@@ -20,15 +20,30 @@ st.markdown(
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;700&display=swap');
 
+    /* Light Theme (default) */
     :root {
-        --color-bg-primary: #0E1117;       /* Streamlit ka default dark background */
-        --color-bg-secondary: #161B22;    /* Card aur dusre elements ke liye */
-        --color-sidebar: #0E1117;        /* Sidebar ke liye thoda alag dark color */
-        --color-primary-accent: #00A9FF;
-        --color-secondary-accent: #9A4BFF;
-        --color-text-primary: #FAFAFA;
-        --color-text-secondary: #B0B3B8;
-        --color-border: #2A2F3B;
+        --color-bg-primary: #FFFFFF;
+        --color-bg-secondary: #F8F9FA;
+        --color-sidebar: #F1F3F6;
+        --color-primary-accent: #007BFF;
+        --color-secondary-accent: #6F42C1;
+        --color-text-primary: #212529;
+        --color-text-secondary: #495057;
+        --color-border: #DEE2E6;
+    }
+
+    /* Dark Theme (auto-detect if user prefers dark) */
+    @media (prefers-color-scheme: dark) {
+        :root {
+            --color-bg-primary: #0E1117;
+            --color-bg-secondary: #161B22;
+            --color-sidebar: #0E1117;
+            --color-primary-accent: #00A9FF;
+            --color-secondary-accent: #9A4BFF;
+            --color-text-primary: #FAFAFA;
+            --color-text-secondary: #B0B3B8;
+            --color-border: #2A2F3B;
+        }
     }
 
     /* General App Styling */
@@ -42,12 +57,12 @@ st.markdown(
         background-color: var(--color-bg-primary);
     }
 
-    /* Sidebar Styling - ab behtar contrast ke saath */
+    /* Sidebar Styling */
     .stSidebar {
         background-color: var(--color-sidebar);
         border-right: 1px solid var(--color-border);
     }
-    .stSidebar .st-emotion-cache-16txtl3 { /* Sidebar content padding */
+    .stSidebar .st-emotion-cache-16txtl3 {
         padding: 1.5rem;
     }
 
@@ -75,7 +90,7 @@ st.markdown(
         border-radius: 12px;
         padding: 30px;
         margin-top: 20px;
-        box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+        box-shadow: 0 8px 16px rgba(0,0,0,0.08);
         border: 1px solid var(--color-border);
     }
     
@@ -90,21 +105,22 @@ st.markdown(
         border-radius: 10px;
     }
     .stRadio label {
-        background-color: #262B34;
+        background-color: var(--color-bg-primary);
         padding: 8px 16px;
         border-radius: 8px;
         transition: all 0.2s ease-in-out;
         cursor: pointer;
+        border: 1px solid var(--color-border);
     }
     .stRadio label:hover {
         background-color: var(--color-primary-accent);
         color: white;
     }
-    
     </style>
     """,
     unsafe_allow_html=True
 )
+
 
 # -----------------------------------------------------------------------------
 # Data Loading and Processing Utilities (Aapka original code - No changes)

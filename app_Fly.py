@@ -10,101 +10,137 @@ from datetime import datetime
 # -----------------------------------------------------------------------------
 # ---------- Theme switcher + robust light/dark CSS ----------
 import streamlit as st
+import re
+import calendar
+import pandas as pd
+import plotly.graph_objects as go
+import streamlit as st
+from datetime import datetime
+
+# -----------------------------------------------------------------------------
+# Page Configuration
+# -----------------------------------------------------------------------------
 st.set_page_config(
     page_title="Fly Curve Comparator",
     layout="wide",
     initial_sidebar_state="expanded"
 )
-st.markdown(
-    """
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;700&display=swap');
 
-    :root {
-        --color-bg-primary: #0E1117;       /* Streamlit ka default dark background */
-        --color-bg-secondary: #161B22;    /* Card aur dusre elements ke liye */
-        --color-sidebar: #0E1117;        /* Sidebar ke liye thoda alag dark color */
-        --color-primary-accent: #00A9FF;
-        --color-secondary-accent: #9A4BFF;
-        --color-text-primary: #FAFAFA;
-        --color-text-secondary: #B0B3B8;
-        --color-border: #2A2F3B;
-    }
+# -----------------------------------------------------------------------------
+# Advanced Theme Switcher with Corrected CSS
+# -----------------------------------------------------------------------------
+# I have rewritten the CSS to be more robust and fixed the light theme issues.
 
-    /* General App Styling */
-    body, .stApp {
-        font-family: 'Inter', sans-serif;
-        color: var(--color-text-primary);
-        background-color: var(--color-bg-primary);
-    }
-    
-    .main {
-        background-color: var(--color-bg-primary);
-    }
+light_css = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;700&display=swap');
 
-    /* Sidebar Styling - ab behtar contrast ke saath */
-    .stSidebar {
-        background-color: var(--color-sidebar);
-        border-right: 1px solid var(--color-border);
-    }
-    .stSidebar .st-emotion-cache-16txtl3 { /* Sidebar content padding */
-        padding: 1.5rem;
-    }
+:root {
+    --bg-primary: #F0F2F6;
+    --bg-secondary: #FFFFFF;
+    --sidebar-bg: #FFFFFF;
+    --card-bg: #FFFFFF;
+    --accent-1: #007BFF;
+    --accent-2: #6F42C1;
+    --text-primary: #1E293B;
+    --text-secondary: #475569;
+    --border: #E2E8F0;
+    --shadow: rgba(15, 23, 42, 0.05);
+}
 
-    /* Typography */
-    h1, h2, h3, h4, h5, h6 {
-        color: var(--color-text-primary);
-        font-weight: 700;
-    }
-    h1 {
-        background: -webkit-linear-gradient(45deg, var(--color-primary-accent), var(--color-secondary-accent));
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        text-align: center;
-        padding-bottom: 1rem;
-    }
-    h2, h3 {
-        border-bottom: 2px solid var(--color-border);
-        padding-bottom: 0.5rem;
-        margin-bottom: 1rem;
-    }
+html, body, .stApp, div[data-testid="stAppViewContainer"], .main {
+    background-color: var(--bg-primary) !important;
+    color: var(--text-primary) !important;
+    font-family: 'Inter', sans-serif !important;
+}
 
-    /* Card Styling */
-    .card {
-        background-color: var(--color-bg-secondary);
-        border-radius: 12px;
-        padding: 30px;
-        margin-top: 20px;
-        box-shadow: 0 8px 16px rgba(0,0,0,0.3);
-        border: 1px solid var(--color-border);
-    }
-    
-    /* Widget Styling */
-    .stRadio > div {
-        display: flex;
-        flex-direction: row;
-        justify-content: center;
-        gap: 10px;
-        background-color: var(--color-bg-secondary);
-        padding: 8px;
-        border-radius: 10px;
-    }
-    .stRadio label {
-        background-color: #262B34;
-        padding: 8px 16px;
-        border-radius: 8px;
-        transition: all 0.2s ease-in-out;
-        cursor: pointer;
-    }
-    .stRadio label:hover {
-        background-color: var(--color-primary-accent);
-        color: white;
-    }
-    
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+div[data-testid="stSidebar"] {
+    background-color: var(--sidebar-bg) !important;
+    border-right: 1px solid var(--border) !important;
+}
+
+h1, h2, h3, h4, h5, h6 { color: var(--text-primary) !important; }
+
+.card {
+    background-color: var(--card-bg) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px var(--shadow);
+    padding: 30px;
+    margin-top: 20px;
+}
+
+.stRadio > div { background-color: #F0F2F6 !important; padding: 6px; border-radius: 10px; }
+.stRadio label {
+    background-color: #FFFFFF !important;
+    color: var(--text-secondary) !important;
+    border: 1px solid var(--border) !important;
+    padding: 6px 12px;
+    border-radius: 8px;
+    transition: all 0.2s ease-in-out;
+}
+
+header, footer { background-color: transparent !important; }
+</style>
+"""
+
+dark_css = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;700&display=swap');
+
+:root {
+    --bg-primary: #0E1117;
+    --bg-secondary: #161B22;
+    --sidebar-bg: #1A1C23;
+    --card-bg: #161B22;
+    --accent-1: #00A9FF;
+    --accent-2: #9A4BFF;
+    --text-primary: #FAFAFA;
+    --text-secondary: #B0B3B8;
+    --border: #2A2F3B;
+    --shadow: rgba(0, 0, 0, 0.3);
+}
+
+html, body, .stApp, div[data-testid="stAppViewContainer"], .main {
+    background-color: var(--bg-primary) !important;
+    color: var(--text-primary) !important;
+    font-family: 'Inter', sans-serif !important;
+}
+
+div[data-testid="stSidebar"] {
+    background-color: var(--sidebar-bg) !important;
+    border-right: 1px solid var(--border) !important;
+}
+
+h1, h2, h3, h4, h5, h6 { color: var(--text-primary) !important; }
+
+.card {
+    background-color: var(--card-bg) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px var(--shadow);
+    padding: 30px;
+    margin-top: 20px;
+}
+
+.stRadio > div { background-color: #0E1117 !important; padding: 6px; border-radius: 10px; }
+.stRadio label {
+    background-color: #262B34 !important;
+    color: var(--text-secondary) !important;
+    border: 1px solid var(--border) !important;
+    padding: 6px 12px;
+    border-radius: 8px;
+    transition: all 0.2s ease-in-out;
+}
+
+header, footer { background-color: transparent !important; }
+</style>
+"""
+
+# The "Auto" CSS now correctly combines both light and dark styles
+auto_css = f"<style> {light_css.replace('<style>', '').replace('</style>', '')} @media (prefers-color-scheme: dark) {{ {dark_css.replace('<style>', '').replace('</style>', '')} }} </style>"
+
+# We will inject the CSS later, after the theme has been chosen in the sidebar
 
 # --------------------------------------------------------------
 

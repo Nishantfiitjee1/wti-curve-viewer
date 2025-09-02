@@ -10,7 +10,11 @@ from datetime import datetime
 # -----------------------------------------------------------------------------
 # ---------- Theme switcher + robust light/dark CSS ----------
 import streamlit as st
-
+st.set_page_config(
+    page_title="Fly Curve Comparator",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 st.markdown(
     """
     <style>

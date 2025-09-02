@@ -13,164 +13,116 @@ import streamlit as st
 
 theme_choice = st.sidebar.selectbox("Theme", ["Auto (system)", "Light", "Dark"], index=0)
 
-light_css = r"""
+light_css = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;700&display=swap');
 
 :root {
-  --bg-primary: #FFFFFF;
-  --bg-secondary: #FFFFFF;
-  --sidebar-bg: #F4F6F8;
-  --card-bg: #FFFFFF;
-  --accent-1: #007BFF;
-  --accent-2: #6F42C1;
-  --text-primary: #0F1720;
-  --text-secondary: #475569;
-  --border: #E6E9EE;
-  --shadow: rgba(15,23,42,0.06);
+    --bg-primary: #F0F2F6;
+    --bg-secondary: #FFFFFF;
+    --sidebar-bg: #FFFFFF;
+    --card-bg: #FFFFFF;
+    --accent-1: #007BFF;
+    --accent-2: #6F42C1;
+    --text-primary: #1E293B;
+    --text-secondary: #475569;
+    --border: #E2E8F0;
+    --shadow: rgba(15, 23, 42, 0.05);
 }
 
-/* App base */
-html, body, .stApp, div[data-testid="stAppViewContainer"], .block-container {
-  background-color: var(--bg-primary) !important;
-  color: var(--text-primary) !important;
-  font-family: 'Inter', sans-serif !important;
+html, body, .stApp, div[data-testid="stAppViewContainer"], .main {
+    background-color: var(--bg-primary) !important;
+    color: var(--text-primary) !important;
+    font-family: 'Inter', sans-serif !important;
 }
 
-/* Sidebar */
 div[data-testid="stSidebar"] {
-  background-color: var(--sidebar-bg) !important;
-  border-right: 1px solid var(--border) !important;
+    background-color: var(--sidebar-bg) !important;
+    border-right: 1px solid var(--border) !important;
 }
 
-/* Card / container styling */
-.block-container .card, .card {
-  background-color: var(--card-bg) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: 12px;
-  box-shadow: 0 6px 18px var(--shadow);
+h1, h2, h3, h4, h5, h6 { color: var(--text-primary) !important; }
+
+.card {
+    background-color: var(--card-bg) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px var(--shadow);
+    padding: 30px;
+    margin-top: 20px;
 }
 
-/* Plotly chart container */
-.stPlotlyChart > div {
-  background-color: var(--card-bg) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: 10px !important;
-  padding: 10px !important;
+.stRadio > div { background-color: #F0F2F6 !important; padding: 6px; border-radius: 10px; }
+.stRadio label {
+    background-color: #FFFFFF !important;
+    color: var(--text-secondary) !important;
+    border: 1px solid var(--border) !important;
+    padding: 6px 12px;
+    border-radius: 8px;
+    transition: all 0.2s ease-in-out;
 }
 
-/* Headings */
-h1, h2, h3, h4 {
-  color: var(--text-primary) !important;
-}
-
-/* Buttons */
-.stButton>button, .stDownloadButton>button {
-  background-color: var(--accent-1) !important;
-  color: #fff !important;
-  border-radius: 8px !important;
-  border: none !important;
-}
-
-/* Radio pill style */
-.stRadio > div { background-color: var(--sidebar-bg) !important; padding: 6px; border-radius: 10px; }
-.stRadio label { background: transparent !important; color: var(--text-primary) !important; border: 1px solid var(--border) !important; padding: 6px 12px; border-radius: 8px; }
-
-/* Small text */
-[data-testid="stMarkdownContainer"] p, .css-1v0mbdj p { color: var(--text-secondary) !important; }
-
-/* Make sure Streamlit's header/footer don't show dark bars */
 header, footer { background-color: transparent !important; }
 </style>
 """
 
-dark_css = r"""
+dark_css = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;700&display=swap');
 
 :root {
-  --bg-primary: #0E1117;
-  --bg-secondary: #0F1720;
-  --sidebar-bg: #0B0F14;
-  --card-bg: #111320;
-  --accent-1: #00A9FF;
-  --accent-2: #9A4BFF;
-  --text-primary: #F8FAFC;
-  --text-secondary: #AAB3C2;
-  --border: #1F2937;
-  --shadow: rgba(0,0,0,0.6);
+    --bg-primary: #0E1117;
+    --bg-secondary: #161B22;
+    --sidebar-bg: #1A1C23;
+    --card-bg: #161B22;
+    --accent-1: #00A9FF;
+    --accent-2: #9A4BFF;
+    --text-primary: #FAFAFA;
+    --text-secondary: #B0B3B8;
+    --border: #2A2F3B;
+    --shadow: rgba(0, 0, 0, 0.3);
 }
 
-/* App base */
-html, body, .stApp, div[data-testid="stAppViewContainer"], .block-container {
-  background-color: var(--bg-primary) !important;
-  color: var(--text-primary) !important;
-  font-family: 'Inter', sans-serif !important;
+html, body, .stApp, div[data-testid="stAppViewContainer"], .main {
+    background-color: var(--bg-primary) !important;
+    color: var(--text-primary) !important;
+    font-family: 'Inter', sans-serif !important;
 }
 
-/* Sidebar */
 div[data-testid="stSidebar"] {
-  background-color: var(--sidebar-bg) !important;
-  border-right: 1px solid var(--border) !important;
+    background-color: var(--sidebar-bg) !important;
+    border-right: 1px solid var(--border) !important;
 }
 
-/* Card / container styling */
-.block-container .card, .card {
-  background-color: var(--card-bg) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: 12px;
-  box-shadow: 0 6px 18px var(--shadow);
+h1, h2, h3, h4, h5, h6 { color: var(--text-primary) !important; }
+
+.card {
+    background-color: var(--card-bg) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px var(--shadow);
+    padding: 30px;
+    margin-top: 20px;
 }
 
-/* Plotly chart container */
-.stPlotlyChart > div {
-  background-color: var(--card-bg) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: 10px !important;
-  padding: 10px !important;
+.stRadio > div { background-color: #0E1117 !important; padding: 6px; border-radius: 10px; }
+.stRadio label {
+    background-color: #262B34 !important;
+    color: var(--text-secondary) !important;
+    border: 1px solid var(--border) !important;
+    padding: 6px 12px;
+    border-radius: 8px;
+    transition: all 0.2s ease-in-out;
 }
 
-/* Headings */
-h1, h2, h3, h4 {
-  color: var(--text-primary) !important;
-}
-
-/* Buttons */
-.stButton>button, .stDownloadButton>button {
-  background-color: var(--accent-1) !important;
-  color: #0b1220 !important;
-  border-radius: 8px !important;
-  border: none !important;
-}
-
-/* Radio pill style */
-.stRadio > div { background-color: var(--sidebar-bg) !important; padding: 6px; border-radius: 10px; }
-.stRadio label { background: transparent !important; color: var(--text-primary) !important; border: 1px solid var(--border) !important; padding: 6px 12px; border-radius: 8px; }
-
-/* Small text */
-[data-testid="stMarkdownContainer"] p, .css-1v0mbdj p { color: var(--text-secondary) !important; }
-
-/* Make sure Streamlit's header/footer don't show white bars */
 header, footer { background-color: transparent !important; }
 </style>
 """
 
-auto_css = r"""
-<style>
-""" + light_css + r"""
-@media (prefers-color-scheme: dark) {
-""" + dark_css + r"""
-}
-</style>
-"""
+# The "Auto" CSS now correctly combines both light and dark styles
+auto_css = f"<style> {light_css.replace('<style>', '').replace('</style>', '')} @media (prefers-color-scheme: dark) {{ {dark_css.replace('<style>', '').replace('</style>', '')} }} </style>"
 
-# Inject appropriate CSS
-if theme_choice == "Auto (system)":
-    st.markdown(auto_css, unsafe_allow_html=True)
-elif theme_choice == "Light":
-    st.markdown(light_css, unsafe_allow_html=True)
-else:
-    st.markdown(dark_css, unsafe_allow_html=True)
+# We will inject the CSS later, after the theme has been chosen in the sidebar
 # --------------------------------------------------------------
 
 

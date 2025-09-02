@@ -23,7 +23,7 @@ st.markdown(
     :root {
         --color-bg-primary: #0E1117;       /* Streamlit ka default dark background */
         --color-bg-secondary: #161B22;    /* Card aur dusre elements ke liye */
-        --color-sidebar: #1A1C23;        /* Sidebar ke liye thoda alag dark color */
+        --color-sidebar: #0E1117;        /* Sidebar ke liye thoda alag dark color */
         --color-primary-accent: #00A9FF;
         --color-secondary-accent: #9A4BFF;
         --color-text-primary: #FAFAFA;

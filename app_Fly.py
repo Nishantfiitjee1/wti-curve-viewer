@@ -310,8 +310,10 @@ with st.sidebar:
     # The key is the user-friendly name for the dropdown.
     # The value is the actual filename in your folder.
     INBUILT_FILES = {
-        "April Fly Curve": "APRIL_FLY.xlsx",
-        "December Fly Curve": "DEC_FLY.xlsx"
+        "April Fly": "APRIL_FLY.xlsx",
+        "May Fly": "MAY_FLY.xlsx",
+        "July Fly": "JULY_FLY.xlsx",
+        "December Fly": "DEC_FLY.xlsx"
     }
 
     source_option = st.radio(

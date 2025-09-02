@@ -350,6 +350,7 @@ with st.sidebar:
     # The key is the user-friendly name for the dropdown.
     # The value is the actual filename in your folder.
     INBUILT_FILES = {
+        "Jan Fly": "JAN_FLY.xlsx",
         "Feb Fly": "FEB_FLY.xlsx",
         "April Fly": "APRIL_FLY.xlsx",
         "May Fly": "MAY_FLY.xlsx",

@@ -352,6 +352,7 @@ with st.sidebar:
     INBUILT_FILES = {
         "April Fly": "APRIL_FLY.xlsx",
         "May Fly": "MAY_FLY.xlsx",
+        "June Fly": "JUNE_FLY.xlsx",
         "July Fly": "JULY_FLY.xlsx",
         "December Fly": "DEC_FLY.xlsx"
     }

@@ -47,14 +47,9 @@ div[data-baseweb="dateinput"] { max-width: 220px; }
 # ==================================================================================================
 # CONFIG
 # ==================================================================================================
-MASTER_EXCEL_FILE = "Futures_Data.xlsx"
-NEWS_EXCEL_FILE = "Important_news_date.xlsx"
-
-PRODUCT_CONFIG = {
-    "CL": {"name": "WTI Crude Oil", "sheet": "WTI_Outright", "color": "#0072B2"},
-    "BZ": {"name": "Brent Crude Oil", "sheet": "Brent_outright", "color": "#D55E00"},
-    "DBI": {"name": "Dubai Crude Oil", "sheet": "Dubai_Outright", "color": "#009E73"},
-}
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # repo root at runtime
+MASTER_EXCEL_FILE = os.path.join(BASE_DIR, "Futures_Data.xlsx")
+NEWS_EXCEL_FILE = os.path.join(BASE_DIR, "Important_news_date.xlsx")
 
 # ==================================================================================================
 # DATA LOADING
@@ -63,6 +58,7 @@ PRODUCT_CONFIG = {
 def load_all_data():
     all_product_data = {}
     if not os.path.exists(MASTER_EXCEL_FILE):
+        st.error(f"Master data file not found or empty: {MASTER_EXCEL_FILE}")
         return {}, pd.DataFrame()
 
     # ---------------------------
@@ -80,23 +76,35 @@ def load_all_data():
             # find header row
             header_row_index = None
             for i in range(0, min(10, df_raw.shape[0])):
-                if any(str(x).strip().lower() in ("date", "dates", "dates.") 
-                       for x in df_raw.iloc[i].tolist() if pd.notna(x)):
+                row_list = df_raw.iloc[i].tolist()
+                if any(str(x).strip().lower() in ("date", "dates", "dates.")
+                       for x in row_list if pd.notna(x)):
                     header_row_index = i
                     break
             if header_row_index is None:
                 header_row_index = 0
 
             data_start_row_index = header_row_index + 1
-            row_vals = [str(x).strip() for x in df_raw.iloc[header_row_index].tolist()]
+
+            # ---------------- SAFE HEADER PARSING ----------------
+            row_vals_raw = df_raw.iloc[header_row_index].tolist()
+            if not isinstance(row_vals_raw, (list, tuple)):
+                raise ValueError("Header row not found or invalid")
+            row_vals = [str(x).strip() for x in row_vals_raw if pd.notna(x)]
+            # ------------------------------------------------------
 
             # build column names
             contracts = [x for x in row_vals[1:] if x and x.lower() not in ("date", "dates")]
             col_names = ["Date"] + contracts
 
             df = df_raw.iloc[data_start_row_index:].copy()
+
+            # pad missing columns if needed
             if df.shape[1] < len(col_names):
-                df = pd.concat([df, pd.DataFrame(columns=list(range(len(col_names) - df.shape[1])))], axis=1)
+                df = pd.concat(
+                    [df, pd.DataFrame(columns=list(range(len(col_names) - df.shape[1])))],
+                    axis=1
+                )
 
             df.columns = col_names[: df.shape[1]]
             df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
@@ -132,10 +140,8 @@ def load_all_data():
                 news_df_raw.rename(columns={date_col: "Date"}, inplace=True)
                 news_df_raw["Date"] = pd.to_datetime(news_df_raw["Date"], errors="coerce")
 
-                # Keep all valid dates, even if other cols are empty
+                # Keep all valid dates (other cells can be empty)
                 df_news = news_df_raw[news_df_raw["Date"].notna()].copy()
-
-                # Sort by date ascending (so future rows stay at bottom naturally)
                 df_news = df_news.sort_values("Date").reset_index(drop=True)
 
         except Exception as e:
@@ -143,6 +149,7 @@ def load_all_data():
             df_news = pd.DataFrame()
 
     return all_product_data, df_news
+
 
 
 # ==================================================================================================
@@ -524,5 +531,6 @@ if st.session_state["show_table"]:
 # ==================================================================================================
 # END
 # ==================================================================================================
+
 
 

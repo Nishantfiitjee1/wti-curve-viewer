@@ -104,43 +104,47 @@ footer {visibility: hidden;}
 # ==================================================================================================
 # 1. CENTRAL FILE & PRODUCT CONFIGURATION
 # ==================================================================================================
-# Using file names directly as provided
-WTI_CSV = "Futures_Data.xlsx - WTI_Outright.csv"
-BRENT_CSV = "Futures_Data.xlsx - Brent_outright.csv"
-DUBAI_CSV = "Futures_Data.xlsx - Dubai_Outright.csv"
-NEWS_CSV = "Important_news_date.xlsx - Sheet1.csv"
-
+# **CORRECTED:** Pointing to the master Excel files now.
+MASTER_EXCEL_FILE = "Futures_Data.xlsx"
+NEWS_EXCEL_FILE = "Important_news_date.xlsx"
 
 PRODUCT_CONFIG = {
-    "CL": {"name": "WTI Crude Oil", "file": WTI_CSV, "color": "#0072B2"},
-    "BZ": {"name": "Brent Crude Oil", "file": BRENT_CSV, "color": "#D55E00"},
-    "DBI": {"name": "Dubai Crude Oil", "file": DUBAI_CSV, "color": "#009E73"},
+    "CL": {"name": "WTI Crude Oil", "sheet": "WTI_Outright", "color": "#0072B2"},
+    "BZ": {"name": "Brent Crude Oil", "sheet": "Brent_outright", "color": "#D55E00"},
+    "DBI": {"name": "Dubai Crude Oil", "sheet": "Dubai_Outright", "color": "#009E73"},
 }
+
 
 # ==================================================================================================
 # 2. DATA LOADING AND UTILITY FUNCTIONS
 # ==================================================================================================
 @st.cache_data(show_spinner="Loading all market data...", ttl=3600)
 def load_all_data():
-    """Loads and processes data from all configured CSV files."""
+    """
+    **CORRECTED:** Loads data from sheets within the master Excel files.
+    """
     all_product_data = {}
     
-    for symbol, config in PRODUCT_CONFIG.items():
-        file_path = config["file"]
-        if not os.path.exists(file_path):
-            st.warning(f"Data file not found for {config['name']}: {file_path}")
-            continue
-        try:
-            # Read CSV directly, assuming the format is consistent
-            df_raw = pd.read_csv(file_path, header=None)
-            
-            # Find the header row (second row in the provided files) and data start
-            header_row_index = 1
-            data_start_row_index = 2
+    # Check for master futures file existence
+    if not os.path.exists(MASTER_EXCEL_FILE):
+        st.error(f"Master data file not found: `{MASTER_EXCEL_FILE}`. Please ensure it's in the same directory.")
+        return {}, pd.DataFrame()
 
-            contracts = [str(x).strip() for x in df_raw.iloc[header_row_index, 1:].tolist() if pd.notna(x) and str(x).strip() != ""]
-            col_names = ["Date"] + contracts
+    for symbol, config in PRODUCT_CONFIG.items():
+        try:
+            # Read from the specific sheet in the master Excel file
+            df_raw = pd.read_excel(MASTER_EXCEL_FILE, sheet_name=config["sheet"], header=None, engine="openpyxl")
             
+            # Dynamically find header and data start (same logic as your original code)
+            header_row_index = df_raw[df_raw[0] == "Dates"].index[0] - 1
+            data_start_row_index = header_row_index + 2
+
+            contracts = [
+                str(x).strip() for x in df_raw.iloc[header_row_index].tolist()[1:]
+                if pd.notna(x) and str(x).strip() != ""
+            ]
+            col_names = ["Date"] + contracts
+
             df = df_raw.iloc[data_start_row_index:].copy()
             df.columns = col_names
             
@@ -152,19 +156,19 @@ def load_all_data():
             all_product_data[symbol] = {"data": df, "contracts": contracts}
 
         except Exception as e:
-            st.error(f"Could not load/parse data for {config['name']}. Error: {e}")
+            st.error(f"Could not load/parse sheet '{config['sheet']}' for {config['name']}. Error: {e}")
             continue
 
     df_news = pd.DataFrame()
-    if os.path.exists(NEWS_CSV):
+    if os.path.exists(NEWS_EXCEL_FILE):
         try:
-            news_df_raw = pd.read_csv(NEWS_CSV)
+            news_df_raw = pd.read_excel(NEWS_EXCEL_FILE, engine="openpyxl")
             date_col = "Dates" if "Dates" in news_df_raw.columns else "Date"
             news_df_raw.rename(columns={date_col: "Date"}, inplace=True)
             news_df_raw["Date"] = pd.to_datetime(news_df_raw["Date"], errors="coerce")
             df_news = news_df_raw.dropna(subset=["Date"]).sort_values("Date").reset_index(drop=True)
         except Exception as e:
-            st.warning(f"Could not load news file. Error: {e}")
+            st.warning(f"Could not load news file '{NEWS_EXCEL_FILE}'. Error: {e}")
 
     return all_product_data, df_news
 
@@ -255,7 +259,7 @@ if "show_table" not in st.session_state:
 all_data, df_news = load_all_data()
 
 if not all_data:
-    st.error("Master data files not found or are empty. Please check the required CSV files.")
+    st.error("Master data files not found or failed to load. The application cannot continue.")
     st.stop()
 
 # ==================================================================================================
@@ -512,9 +516,13 @@ if "Time Series" in st.session_state.selected_views:
         figS = go.Figure()
         last_sub_df = pd.DataFrame()
         for item in sel_spreads:
-            sym, pair = item.split(":")
-            sym, pair = sym.strip(), pair.strip()
-            cA, cB = [p.strip() for p in pair.split("-")]
+            try:
+                sym, pair = item.split(":")
+                sym, pair = sym.strip(), pair.strip()
+                cA, cB = [p.strip() for p in pair.split("-")]
+            except ValueError:
+                continue # Skip malformed items
+
             df = all_data[sym]["data"]
             sub = filter_by_date_window(df, st.session_state.start_date, st.session_state.end_date)
             if sub.empty: continue
@@ -545,3 +553,4 @@ if st.session_state["show_table"]:
             st.caption(f"No data for {symbol} in the selected range.")
         else:
             st.dataframe(filtered_df, use_container_width=True)
+

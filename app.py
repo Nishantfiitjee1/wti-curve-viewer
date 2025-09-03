@@ -64,52 +64,86 @@ def load_all_data():
     all_product_data = {}
     if not os.path.exists(MASTER_EXCEL_FILE):
         return {}, pd.DataFrame()
+
+    # ---------------------------
+    # Load Product Sheets
+    # ---------------------------
     for symbol, config in PRODUCT_CONFIG.items():
         try:
-            df_raw = pd.read_excel(MASTER_EXCEL_FILE, sheet_name=config["sheet"], header=None, engine="openpyxl")
-            # try to find header row that contains 'Dates' or 'Date'
+            df_raw = pd.read_excel(
+                MASTER_EXCEL_FILE,
+                sheet_name=config["sheet"],
+                header=None,
+                engine="openpyxl"
+            )
+
+            # find header row
             header_row_index = None
             for i in range(0, min(10, df_raw.shape[0])):
-                if any(str(x).strip().lower() in ("date", "dates", "dates.") for x in df_raw.iloc[i].tolist() if pd.notna(x)):
+                if any(str(x).strip().lower() in ("date", "dates", "dates.") 
+                       for x in df_raw.iloc[i].tolist() if pd.notna(x)):
                     header_row_index = i
                     break
             if header_row_index is None:
-                # fallback: assume first row is header labels
                 header_row_index = 0
-            data_start_row_index = header_row_index + 1
 
+            data_start_row_index = header_row_index + 1
             row_vals = [str(x).strip() for x in df_raw.iloc[header_row_index].tolist()]
-            # first column name expected to be Date / Dates
+
+            # build column names
             contracts = [x for x in row_vals[1:] if x and x.lower() not in ("date", "dates")]
             col_names = ["Date"] + contracts
 
             df = df_raw.iloc[data_start_row_index:].copy()
             if df.shape[1] < len(col_names):
-                # try to expand columns if fewer
                 df = pd.concat([df, pd.DataFrame(columns=list(range(len(col_names) - df.shape[1])))], axis=1)
+
             df.columns = col_names[: df.shape[1]]
             df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+
             for c in contracts:
                 if c in df.columns:
                     df[c] = pd.to_numeric(df[c], errors="coerce")
+
+            # Drop rows with invalid Date only
             df = df.dropna(subset=["Date"]).sort_values("Date", ascending=False).reset_index(drop=True)
+
             all_product_data[symbol] = {"data": df, "contracts": contracts}
         except Exception as e:
             st.warning(f"Could not load/parse sheet for {config['name']}. Error: {e}")
             continue
 
+    # ---------------------------
+    # Load News File
+    # ---------------------------
     df_news = pd.DataFrame()
     if os.path.exists(NEWS_EXCEL_FILE):
         try:
             news_df_raw = pd.read_excel(NEWS_EXCEL_FILE, engine="openpyxl")
-            date_col = "Date" if "Date" in news_df_raw.columns else "Dates" if "Dates" in news_df_raw.columns else None
+
+            # detect Date column
+            date_col = None
+            for candidate in ["Date", "Dates"]:
+                if candidate in news_df_raw.columns:
+                    date_col = candidate
+                    break
+
             if date_col:
                 news_df_raw.rename(columns={date_col: "Date"}, inplace=True)
                 news_df_raw["Date"] = pd.to_datetime(news_df_raw["Date"], errors="coerce")
-                df_news = news_df_raw.dropna(subset=["Date"]).sort_values("Date").reset_index(drop=True)
-        except Exception:
+
+                # Keep all valid dates, even if other cols are empty
+                df_news = news_df_raw[news_df_raw["Date"].notna()].copy()
+
+                # Sort by date ascending (so future rows stay at bottom naturally)
+                df_news = df_news.sort_values("Date").reset_index(drop=True)
+
+        except Exception as e:
+            st.warning(f"Could not load/parse news file. Error: {e}")
             df_news = pd.DataFrame()
+
     return all_product_data, df_news
+
 
 # ==================================================================================================
 # UTILS
@@ -490,4 +524,5 @@ if st.session_state["show_table"]:
 # ==================================================================================================
 # END
 # ==================================================================================================
+
 

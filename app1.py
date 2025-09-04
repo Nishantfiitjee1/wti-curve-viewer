@@ -207,12 +207,12 @@ with tab1:
             m_cols[2].metric(label=f"M1-M12 Spread ({contracts[0]}-{contracts[11]})", value=f"{s1[contracts[0]] - s1[contracts[11]]:.2f}")
         
         st.markdown("---")
-        col1, col2 = st.columns(2)
+        col1, col2 , col3 = st.columns(3)
 
         # =============================
         # MULTI-DATE CURVE OVERLAY
         # =============================
-        with col2:
+        with col1:
             st.markdown("##### Multi-Date Overlay")
             valid_curves = {
                 d: s for d, s in {d: curve_for_date(work_df, contracts, d) for d in multi_dates}.items() if s is not None
@@ -230,8 +230,7 @@ with tab1:
             # =============================
             # DYNAMIC SPREAD CURVE FROM DEDICATED SHEET
             # =============================
-
-            st.markdown("---")
+        with col2:
             st.markdown("##### Spread Curve Overlay (from Dedicated Sheet)")
 
             # To make this dynamic, we map each product symbol to its corresponding spread sheet name.
@@ -277,6 +276,40 @@ with tab1:
             else:
                 # This message appears if the selected product doesn't have a spread sheet defined in our map.
                 st.info(f"Spread curve analysis is not configured for {selected_product_info['name']} ({selected_symbol}).")
+
+        with col3:
+            st.markdown("##### Fly Curve Overlay")
+            FLY_SHEET_MAP = {
+                "CL": "FLY_CL",
+                "BZ": "FLY_Brent",
+                "DBI": "FLY_DBI",
+                "MRBN": "FLY_MRBN"
+            }
+            target_fly_sheet = FLY_SHEET_MAP.get(selected_symbol)
+            if target_fly_sheet:
+                try:
+                    df_fly, fly_contracts = load_product_data(MASTER_EXCEL_FILE, target_fly_sheet)
+                    valid_fly_curves = {}
+                    for d in multi_dates:
+                        s = curve_for_date(df_fly, fly_contracts, d)
+                        if s is not None:
+                            valid_fly_curves[d] = s
+
+                    if not valid_fly_curves:
+                        st.warning(f"No data found in the '{target_fly_sheet}' sheet for the selected dates.")
+                    else:
+                        fig_fly_overlay = overlay_figure(
+                            fly_contracts,
+                            valid_fly_curves,
+                            y_label="Fly Spread ($)",
+                            title=f"Fly Curve from '{target_fly_sheet}'"
+                        )
+                        st.plotly_chart(fig_fly_overlay, use_container_width=True, key=f"fly_overlay_{selected_symbol}")
+                except Exception as e:
+                    st.info(f"The '{target_fly_sheet}' sheet was not found or could not be loaded.")
+            else:
+                st.info(f"Fly curve analysis is not configured for {selected_product_info['name']}.")
+
 
 with tab2:
     st.header("Spread & Fly Time Series Analysis")
@@ -429,4 +462,5 @@ with tab3:
 
 with st.expander("Preview Raw Data"):
     st.dataframe(df.head(25))
+
 

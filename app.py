@@ -230,16 +230,8 @@ def load_all_data():
     all_product_data: dict[str, dict] = {}
 
     if not os.path.exists(MASTER_EXCEL_FILE):
-        # return empty; caller will show a friendly error
         return {}, pd.DataFrame()
 
-    def safe_contract_list(vals):
-        """Extract valid contract labels (exclude Date)."""
-        return [x for x in vals[1:] if isinstance(x, str) and x.strip().lower() not in ("date", "dates", "dates.")]
-
-    # ---------------------------
-    # Load Product Sheets
-    # ---------------------------
     for symbol, cfg in PRODUCT_CONFIG.items():
         try:
             df_raw = pd.read_excel(
@@ -248,18 +240,14 @@ def load_all_data():
                 header=None,
                 engine="openpyxl",
             )
-
             if df_raw is None or df_raw.empty:
-                raise ValueError("Sheet is empty")
+                raise ValueError("Sheet is empty or not found")
 
-            # Find header row (scan first 10 rows for 'Date'/'Dates')
+            # detect header row
             header_row_index = None
             for i in range(min(10, df_raw.shape[0])):
-                row_list = df_raw.iloc[i].tolist()
-                if any(
-                    isinstance(x, str) and x.strip().lower() in ("date", "dates", "dates.")
-                    for x in row_list if pd.notna(x)
-                ):
+                row_list = [str(x).strip().lower() for x in df_raw.iloc[i] if pd.notna(x)]
+                if any(x in ("date", "dates", "dates.") for x in row_list):
                     header_row_index = i
                     break
             if header_row_index is None:
@@ -267,64 +255,51 @@ def load_all_data():
 
             data_start_row_index = header_row_index + 1
 
-            # Build contracts list
-            header_vals = [str(x).strip() for x in df_raw.iloc[header_row_index].tolist() if pd.notna(x)]
-            contracts = safe_contract_list(header_vals)
+            # column names
+            header_vals = [str(x).strip() for x in df_raw.iloc[header_row_index] if pd.notna(x)]
+            if not header_vals:
+                raise ValueError("No header row detected")
 
-            # fallback if no contracts found
-            if not contracts and df_raw.shape[0] > header_row_index + 1:
-                alt_vals = [str(x).strip() for x in df_raw.iloc[header_row_index + 1].tolist() if pd.notna(x)]
-                contracts = safe_contract_list(alt_vals)
-                if contracts:
-                    data_start_row_index = header_row_index + 2
+            # first column must be Date
+            col_names = ["Date"] + header_vals[1:]
 
-            if not contracts:
-                raise ValueError("No contract columns detected")
-
-            col_names = ["Date"] + contracts
             df = df_raw.iloc[data_start_row_index:].copy()
 
-            # ✅ Safe alignment
+            # align
             valid_cols = min(len(col_names), df.shape[1])
             df = df.iloc[:, :valid_cols]
             df.columns = col_names[:valid_cols]
 
-            # ✅ Types
+            # types
             df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-            for c in contracts:
-                if c in df.columns:
+            for c in df.columns:
+                if c != "Date":
                     df[c] = pd.to_numeric(df[c], errors="coerce")
 
-            # ✅ Keep only valid Date rows
             df = df.dropna(subset=["Date"]).sort_values("Date", ascending=False).reset_index(drop=True)
 
-            all_product_data[symbol] = {"data": df, "contracts": contracts}
+            all_product_data[symbol] = {"data": df, "contracts": [c for c in df.columns if c != "Date"]}
 
         except Exception as e:
             st.warning(f"Could not load/parse sheet for {cfg['name']} (sheet='{cfg['sheet']}'). Error: {e}")
 
-    # ---------------------------
-    # Load News File
-    # ---------------------------
+    # NEWS file
     df_news = pd.DataFrame()
     if os.path.exists(NEWS_EXCEL_FILE):
         try:
-            news_df_raw = pd.read_excel(NEWS_EXCEL_FILE, engine="openpyxl")
-            if news_df_raw is not None and not news_df_raw.empty:
-                date_col = next((c for c in ["Date", "Dates"] if c in news_df_raw.columns), None)
-                if date_col:
-                    news_df_raw = news_df_raw.rename(columns={date_col: "Date"})
-                    news_df_raw["Date"] = pd.to_datetime(news_df_raw["Date"], errors="coerce")
-                    df_news = (
-                        news_df_raw[news_df_raw["Date"].notna()]
-                        .sort_values("Date")
-                        .reset_index(drop=True)
-                    )
+            df_news = pd.read_excel(NEWS_EXCEL_FILE, engine="openpyxl")
+            df_news.columns = [str(c).strip() for c in df_news.columns]
+            if "Date" in df_news.columns or "Dates" in df_news.columns:
+                date_col = "Date" if "Date" in df_news.columns else "Dates"
+                df_news = df_news.rename(columns={date_col: "Date"})
+                df_news["Date"] = pd.to_datetime(df_news["Date"], errors="coerce")
+                df_news = df_news.dropna(subset=["Date"]).reset_index(drop=True)
         except Exception as e:
             st.warning(f"Could not load/parse news file. Error: {e}")
             df_news = pd.DataFrame()
 
     return all_product_data, df_news
+
 
 
 
@@ -413,16 +388,19 @@ with mid2:
     # Overlay toggle + pick multiple dates (these will render instantly—Streamlit reruns on change)
     overlay = st.checkbox("Overlay dates", value=bool(st.session_state.get("picked_multi_dates")), key="overlay_toggle")
     if overlay:
-        # Build available dates from selected products
-        available = set()
-        for sym in st.session_state["selected_products"]:
-            df_s = all_data.get(sym, {}).get("data")
-            if df_s is not None and not df_s.empty:
-                available |= set(df_s["Date"].dt.date.dropna().unique())
-        all_dates_sorted = sorted(available, reverse=True)
-        st.session_state["picked_multi_dates"] = st.multiselect("Overlay", options=all_dates_sorted, default=st.session_state.get("picked_multi_dates", []), key="multi_dates")
-    else:
-        st.session_state["picked_multi_dates"] = []
+    available = set()
+    for sym in st.session_state["selected_products"]:
+        df_s = all_data.get(sym, {}).get("data")
+        if df_s is not None and not df_s.empty:
+            available |= set(df_s["Date"].dt.date.dropna().unique())
+    all_dates_sorted = sorted(available, reverse=True)
+
+    chosen = st.multiselect("Overlay", options=all_dates_sorted,
+                            default=st.session_state.get("picked_multi_dates", []),
+                            key="multi_dates")
+    if chosen != st.session_state.get("picked_multi_dates"):
+        st.session_state["picked_multi_dates"] = chosen
+        st.experimental_rerun()
 
 with right:
     st.markdown('<div class="group-title">Range</div>', unsafe_allow_html=True)
@@ -695,4 +673,5 @@ if st.session_state["view_flies_ts"] and st.session_state["selected_products"]:
 # 11) FOOTER NOTE
 # =========================================
 st.caption("Tip: Toggle Views in the header to show/hide sections instantly. Overlay multiple dates to compare curves without extra clicks.")
+
 

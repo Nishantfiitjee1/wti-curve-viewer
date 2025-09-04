@@ -277,8 +277,8 @@ with tab1:
                 # This message appears if the selected product doesn't have a spread sheet defined in our map.
                 st.info(f"Spread curve analysis is not configured for {selected_product_info['name']} ({selected_symbol}).")
 
-         with col2:
-            st.markdown("##### Spread Curve Overlay")
+         with col3:
+            st.markdown("##### FLY Curve Overlay")
 
             # To make this dynamic, we map each product symbol to its corresponding spread sheet name.
             # You can easily add more products here in the future.
@@ -475,6 +475,7 @@ with tab3:
 
 with st.expander("Preview Raw Data"):
     st.dataframe(df.head(25))
+
 
 
 

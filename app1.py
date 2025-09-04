@@ -238,30 +238,48 @@ with tab1:
                 )
                 st.plotly_chart(fig_overlay, use_container_width=True, key=f"multi_chart_{selected_symbol}")
 
-        # =============================
-        # MULTI-DATE SPREAD OVERLAY (CURVE STYLE)
-        # =============================
-            st.markdown("---")
-            st.markdown("##### Multi-Date Spread Overlay (Curve Style)")
-        
-            valid_spread_curves = {}
-            for d in multi_dates:
-                s = curve_for_date(work_df, contracts, d)
-                if s is not None and len(contracts) > 1:
-                    spread_curve = {}
-                    for i in range(1, len(contracts)):
-                        spread_curve[f"{contracts[0]}-{contracts[i]}"] = s[contracts[0]] - s[contracts[i]]
-                    valid_spread_curves[d] = pd.Series(spread_curve)   # <-- convert dict → Series
-        
-            if not valid_spread_curves:
-                st.warning("No spread curve data found for any overlay dates.")
-            else:
-                fig_spread_overlay = overlay_figure(
-                    list(valid_spread_curves[list(valid_spread_curves.keys())[0]].index),  # use Series index
-                    valid_spread_curves,
-                    y_label="Spread ($)"
-                )
-                st.plotly_chart(fig_spread_overlay, use_container_width=True, key=f"spread_overlay_{selected_symbol}")
+            # =============================
+            # SPREAD CURVE FROM DEDICATED SHEET (REPLACES DYNAMIC CALCULATION)
+            # =============================
+                st.markdown("---")
+                st.markdown("##### Spread Curve Overlay (from Spread_CL sheet)")
+                
+                # This entire section will only run if the selected product is WTI Crude Oil.
+                if selected_symbol == "CL":
+                    try:
+                        # Step 1: Attempt to load the dedicated spread data sheet.
+                        # We reuse your existing cached function for efficiency.
+                        df_spreads, spread_contracts = load_product_data(MASTER_EXCEL_FILE, "Spread_CL")
+                
+                        # Step 2: Get the curves for the dates selected in the sidebar's multi-select.
+                        valid_spread_curves = {}
+                        for d in multi_dates:
+                            # The curve_for_date function is reused to find the correct row for each date.
+                            s = curve_for_date(df_spreads, spread_contracts, d)
+                            if s is not None:
+                                valid_spread_curves[d] = s
+                
+                        # Step 3: Plot the data if any was found for the selected dates.
+                        if not valid_spread_curves:
+                            st.warning("No data found in the 'Spread_CL' sheet for the selected overlay dates.")
+                        else:
+                            # The overlay_figure function is reused to create the plot.
+                            fig_spread_overlay = overlay_figure(
+                                spread_contracts,          # X-axis labels are the columns from the sheet
+                                valid_spread_curves,       # The data series for each date
+                                y_label="Spread ($)",      # Set a specific Y-axis label
+                                title="Spread Curve from 'Spread_CL' Sheet"
+                            )
+                            st.plotly_chart(fig_spread_overlay, use_container_width=True, key=f"spread_overlay_{selected_symbol}")
+                
+                    except Exception as e:
+                        # If the sheet "Spread_CL" doesn't exist or there's an error, show a message.
+                        st.info("The 'Spread_CL' sheet was not found or could not be loaded. This chart is unavailable.")
+                        # To help with debugging, you could optionally show the error:
+                        # st.error(f"Error loading spread data: {e}")
+                else:
+                    # Shows a message if the user is viewing a product other than CL.
+                    st.info("Spread curve analysis from a dedicated sheet is only available for WTI Crude Oil (CL).")
 
 
 
@@ -416,6 +434,7 @@ with tab3:
 
 with st.expander("Preview Raw Data"):
     st.dataframe(df.head(25))
+
 
 
 

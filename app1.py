@@ -250,7 +250,7 @@ with tab1:
             SPREAD_SHEET_MAP = {
                 "CL": "Spread_CL",
                 "BZ": "Spread_Brent",
-                "DBI": "Spread_DBI"
+                "DBI": "Spread_DBI",
                 "MRBN": "Spread_MRBN"
             }
             
@@ -442,6 +442,7 @@ with tab3:
 
 with st.expander("Preview Raw Data"):
     st.dataframe(df.head(25))
+
 
 
 

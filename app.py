@@ -233,6 +233,13 @@ def load_all_data():
         # return empty; caller will show a friendly error
         return {}, pd.DataFrame()
 
+    def safe_contract_list(vals):
+        """Extract valid contract labels (exclude Date)."""
+        return [x for x in vals[1:] if isinstance(x, str) and x.strip().lower() not in ("date", "dates", "dates.")]
+
+    # ---------------------------
+    # Load Product Sheets
+    # ---------------------------
     for symbol, cfg in PRODUCT_CONFIG.items():
         try:
             df_raw = pd.read_excel(
@@ -247,86 +254,78 @@ def load_all_data():
 
             # Find header row (scan first 10 rows for 'Date'/'Dates')
             header_row_index = None
-            scan_rows = min(10, df_raw.shape[0])
-            for i in range(scan_rows):
+            for i in range(min(10, df_raw.shape[0])):
                 row_list = df_raw.iloc[i].tolist()
                 if any(
-                    (isinstance(x, str) and x.strip().lower() in ("date", "dates", "dates."))
+                    isinstance(x, str) and x.strip().lower() in ("date", "dates", "dates.")
                     for x in row_list if pd.notna(x)
                 ):
                     header_row_index = i
                     break
             if header_row_index is None:
-                # fallback to row 0
                 header_row_index = 0
 
             data_start_row_index = header_row_index + 1
 
-            # Safe header parse
-            header_vals_raw = df_raw.iloc[header_row_index].tolist()
-            if not isinstance(header_vals_raw, (list, tuple)):
-                raise ValueError("Header row not valid (not list-like)")
+            # Build contracts list
+            header_vals = [str(x).strip() for x in df_raw.iloc[header_row_index].tolist() if pd.notna(x)]
+            contracts = safe_contract_list(header_vals)
 
-            header_vals = [str(x).strip() for x in header_vals_raw if pd.notna(x)]
-            contracts = _safe_contract_list(header_vals)
-            if not contracts:
-                # Try another fallback: if row 1 has labels
-                if df_raw.shape[0] > header_row_index + 1:
-                    alt = [str(x).strip() for x in df_raw.iloc[header_row_index + 1].tolist() if pd.notna(x)]
-                    maybe = _safe_contract_list(alt)
-                    if maybe:
-                        contracts = maybe
-                        data_start_row_index = header_row_index + 2
+            # fallback if no contracts found
+            if not contracts and df_raw.shape[0] > header_row_index + 1:
+                alt_vals = [str(x).strip() for x in df_raw.iloc[header_row_index + 1].tolist() if pd.notna(x)]
+                contracts = safe_contract_list(alt_vals)
+                if contracts:
+                    data_start_row_index = header_row_index + 2
 
             if not contracts:
                 raise ValueError("No contract columns detected")
 
             col_names = ["Date"] + contracts
-
             df = df_raw.iloc[data_start_row_index:].copy()
 
-            # pad columns if fewer than expected
-            if df.shape[1] < len(col_names):
-                pad_n = len(col_names) - df.shape[1]
-                df = pd.concat([df, pd.DataFrame(columns=list(range(pad_n)))], axis=1)
+            # ✅ Safe alignment
+            valid_cols = min(len(col_names), df.shape[1])
+            df = df.iloc[:, :valid_cols]
+            df.columns = col_names[:valid_cols]
 
-            # trim extra columns if too many
-            if df.shape[1] > len(col_names):
-                df = df.iloc[:, :len(col_names)]
-
-            df.columns = col_names
-
-            # types
+            # ✅ Types
             df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
             for c in contracts:
-                df[c] = pd.to_numeric(df[c], errors="coerce")
+                if c in df.columns:
+                    df[c] = pd.to_numeric(df[c], errors="coerce")
 
-            # keep only valid Date rows
-            df = df.dropna(subset=["Date"])
-            df = df.sort_values("Date", ascending=False).reset_index(drop=True)
+            # ✅ Keep only valid Date rows
+            df = df.dropna(subset=["Date"]).sort_values("Date", ascending=False).reset_index(drop=True)
 
             all_product_data[symbol] = {"data": df, "contracts": contracts}
 
         except Exception as e:
             st.warning(f"Could not load/parse sheet for {cfg['name']} (sheet='{cfg['sheet']}'). Error: {e}")
 
-    # NEWS (optional)
+    # ---------------------------
+    # Load News File
+    # ---------------------------
     df_news = pd.DataFrame()
     if os.path.exists(NEWS_EXCEL_FILE):
         try:
             news_df_raw = pd.read_excel(NEWS_EXCEL_FILE, engine="openpyxl")
             if news_df_raw is not None and not news_df_raw.empty:
-                date_col = next((c for c in ["Date","Dates"] if c in news_df_raw.columns), None)
+                date_col = next((c for c in ["Date", "Dates"] if c in news_df_raw.columns), None)
                 if date_col:
                     news_df_raw = news_df_raw.rename(columns={date_col: "Date"})
                     news_df_raw["Date"] = pd.to_datetime(news_df_raw["Date"], errors="coerce")
-                    # Keep rows that have a valid Date (allow other cells blank/future)
-                    df_news = news_df_raw[news_df_raw["Date"].notna()].sort_values("Date").reset_index(drop=True)
+                    df_news = (
+                        news_df_raw[news_df_raw["Date"].notna()]
+                        .sort_values("Date")
+                        .reset_index(drop=True)
+                    )
         except Exception as e:
             st.warning(f"Could not load/parse news file. Error: {e}")
             df_news = pd.DataFrame()
 
     return all_product_data, df_news
+
 
 
 # =========================================
@@ -696,3 +695,4 @@ if st.session_state["view_flies_ts"] and st.session_state["selected_products"]:
 # 11) FOOTER NOTE
 # =========================================
 st.caption("Tip: Toggle Views in the header to show/hide sections instantly. Overlay multiple dates to compare curves without extra clicks.")
+

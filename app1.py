@@ -210,18 +210,8 @@ with tab1:
         st.markdown("---")
         col1, col2 = st.columns(2)
 
-        # --- SINGLE DATE CURVE ---
-        with col1:
-            st.markdown("##### Single Date Curve")
-            fig_single = overlay_figure(
-                contracts, 
-                {single_date: s1}, 
-                y_label=("Z-score" if normalize else "Last Price ($)")
-            )
-            st.plotly_chart(fig_single, use_container_width=True, key=f"single_chart_{selected_symbol}")
-
         # --- MULTI-DATE CURVE OVERLAY ---
-        with col2:
+        with col1:
             st.markdown("##### Multi-Date Overlay")
             valid_curves = {
                 d: s for d, s in {d: curve_for_date(work_df, contracts, d) for d in multi_dates}.items() if s is not None
@@ -237,11 +227,8 @@ with tab1:
                 st.plotly_chart(fig_overlay, use_container_width=True, key=f"multi_chart_{selected_symbol}")
 
         # --- DEDICATED SHEET CHARTS (SPREAD AND FLY) ---
-        st.markdown("---")
-        col3, col4 = st.columns(2)
-
         # --- SPREAD CURVE FROM DEDICATED SHEET ---
-        with col3:
+        with col2:
             st.markdown("##### Spread Curve Overlay")
             SPREAD_SHEET_MAP = {
                 "CL": "Spread_CL",
@@ -275,7 +262,7 @@ with tab1:
                 st.info(f"Spread curve analysis is not configured for {selected_product_info['name']}.")
 
         # --- FLY CURVE FROM DEDICATED SHEET ---
-        with col4:
+        with col3:
             st.markdown("##### Fly Curve Overlay")
             FLY_SHEET_MAP = {
                 "CL": "FLY_CL",
@@ -466,3 +453,4 @@ with tab3:
 
 with st.expander("Preview Raw Data"):
     st.dataframe(df.head(25))
+

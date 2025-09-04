@@ -286,7 +286,7 @@ with tab1:
                 "DBI": "FLY_DBI",
                 "MRBN": "FLY_MRBN"
             }
-            target_fly_sheet = FLY_SHEET_MAP.get(primary_symbol) # Changed to primary_symbol
+            target_fly_sheet = FLY_SHEET_MAP.get(selected_symbol) # Changed to primary_symbol
             
             if target_fly_sheet:
                 # The function now safely returns None if the sheet is missing
@@ -468,6 +468,7 @@ with tab3:
 
 with st.expander("Preview Raw Data"):
     st.dataframe(df.head(25))
+
 
 
 

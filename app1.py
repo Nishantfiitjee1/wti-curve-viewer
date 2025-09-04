@@ -50,6 +50,7 @@ PRODUCT_CONFIG = {
     "CL": {"name": "WTI Crude Oil", "sheet": "WTI_Outright"},
     "BZ": {"name": "Brent Crude Oil", "sheet": "Brent_outright"},
     "DBI": {"name": "Dubai Crude Oil", "sheet": "Dubai_Outright"},
+    "MRBN": {"name": "Murban Crude Oil", "sheet": "MURBAN_Outright"},
 }
 
 
@@ -250,6 +251,7 @@ with tab1:
                 "CL": "Spread_CL",
                 "BZ": "Spread_Brent",
                 "DBI": "Spread_DBI"
+                "MRBN": "Spread_MRBN"
             }
             
             # Get the correct sheet name for the currently selected product.
@@ -440,6 +442,7 @@ with tab3:
 
 with st.expander("Preview Raw Data"):
     st.dataframe(df.head(25))
+
 
 
 

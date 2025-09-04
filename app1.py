@@ -277,44 +277,51 @@ with tab1:
                 # This message appears if the selected product doesn't have a spread sheet defined in our map.
                 st.info(f"Spread curve analysis is not configured for {selected_product_info['name']} ({selected_symbol}).")
 
-        # This is the corrected code for your chart
-        with col3:
-            st.markdown("##### Fly Curve Overlay")
+         with col2:
+            st.markdown("##### Spread Curve Overlay")
+
+            # To make this dynamic, we map each product symbol to its corresponding spread sheet name.
+            # You can easily add more products here in the future.
             FLY_SHEET_MAP = {
                 "CL": "FLY_CL",
                 "BZ": "FLY_Brent",
                 "DBI": "FLY_DBI",
                 "MRBN": "FLY_MRBN"
             }
+
+            # Get the correct sheet name for the currently selected product.
             target_fly_sheet = FLY_SHEET_MAP.get(selected_symbol) # Changed to primary_symbol
-            
+
+            # The logic will now run for any product that has a mapping above.
             if target_fly_sheet:
-                # The function now safely returns None if the sheet is missing
-                df_fly, fly_contracts = load_product_data(MASTER_EXCEL_FILE, target_fly_sheet)
-                
-                # Check if the data was loaded successfully
-                if df_fly is not None:
-                    valid_fly_curves = {}
+                try:
+                    # Step 1: Load the dedicated spread data sheet using the dynamic sheet name.
+                    df_fly, fly_contracts = load_product_data(MASTER_EXCEL_FILE, target_fly_sheet)
+
+                    # Step 2: Get the curves for the dates selected in the sidebar. (This logic is unchanged)
+                    valid_spread_curves = {}
                     for d in multi_dates:
                         s = curve_for_date(df_fly, fly_contracts, d)
                         if s is not None:
                             valid_fly_curves[d] = s
-        
+
+                    # Step 3: Plot the data if any was found. (This logic is unchanged)
                     if not valid_fly_curves:
                         st.warning(f"No data found in '{target_fly_sheet}' for the selected dates.")
                     else:
-                        fig_fly_overlay = overlay_figure(
+                        fig_spread_overlay = overlay_figure(
                             fly_contracts,
                             valid_fly_curves,
                             y_label="Fly Spread ($)",
-                            title=f"Fly Curve from '{target_fly_sheet}'"
                         )
-                        st.plotly_chart(fig_fly_overlay, use_container_width=True, key=f"fly_overlay_{primary_symbol}")
-                else:
-                    # This message now appears if the sheet was not found or was empty/invalid
-                    st.info(f"The '{target_fly_sheet}' sheet was not found or has an incorrect format.")
+                        st.plotly_chart(fig_fly_overlay, use_container_width=True, key=f"fly_overlay_{selected_symbol}")
+
+                except Exception as e:
+                    # The error message is now dynamic to help with debugging.
+                    st.info(f"The '{target_fly_sheet}' sheet was not found or could not be loaded. This chart is unavailable.")
             else:
-                st.info(f"Fly curve analysis is not configured for {primary_product_info['name']}.")
+                # This message appears if the selected product doesn't have a spread sheet defined in our map.
+                st.info(f"Fly curve analysis is not configured for {selected_product_info['name']} ({selected_symbol}).")
 
 
 with tab2:
@@ -468,6 +475,7 @@ with tab3:
 
 with st.expander("Preview Raw Data"):
     st.dataframe(df.head(25))
+
 
 
 

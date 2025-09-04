@@ -210,18 +210,6 @@ with tab1:
         col1, col2 = st.columns(2)
 
         # =============================
-        # SINGLE DATE CURVE
-        # =============================
-        with col1:
-            st.markdown("##### Single Date Curve")
-            fig_single = overlay_figure(
-                contracts, 
-                {single_date: s1}, 
-                y_label=("Z-score" if normalize else "Last Price ($)")
-            )
-            st.plotly_chart(fig_single, use_container_width=True, key=f"single_chart_{selected_symbol}")
-
-        # =============================
         # MULTI-DATE CURVE OVERLAY
         # =============================
         with col2:
@@ -441,3 +429,4 @@ with tab3:
 
 with st.expander("Preview Raw Data"):
     st.dataframe(df.head(25))
+

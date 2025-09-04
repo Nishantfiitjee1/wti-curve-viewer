@@ -278,7 +278,7 @@ with tab1:
                 st.info(f"Spread curve analysis is not configured for {selected_product_info['name']} ({selected_symbol}).")
 
         # This is the corrected code for your chart
-        with col4:
+        with col3:
             st.markdown("##### Fly Curve Overlay")
             FLY_SHEET_MAP = {
                 "CL": "FLY_CL",
@@ -468,6 +468,7 @@ with tab3:
 
 with st.expander("Preview Raw Data"):
     st.dataframe(df.head(25))
+
 
 
 

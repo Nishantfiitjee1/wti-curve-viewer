@@ -195,7 +195,7 @@ with tab1:
         st.error("No data available for the chosen date.")
     else:
         # =============================
-        # METRICS SECTION
+        # METRICS SECTION (Kept for quick reference)
         # =============================
         st.markdown("##### Key Curve Metrics")
         m_cols = st.columns(3)
@@ -207,24 +207,14 @@ with tab1:
             m_cols[2].metric(label=f"M1-M12 Spread ({contracts[0]}-{contracts[11]})", value=f"{s1[contracts[0]] - s1[contracts[11]]:.2f}")
         
         st.markdown("---")
-        col1, col2 = st.columns(2)
+
+        # Create a 3-column layout for the charts
+        col1, col2, col3 = st.columns(3)
 
         # =============================
-        # SINGLE DATE CURVE
+        # COLUMN 1: MULTI-DATE OUTRIGHT CURVE
         # =============================
         with col1:
-            st.markdown("##### Single Date Curve")
-            fig_single = overlay_figure(
-                contracts, 
-                {single_date: s1}, 
-                y_label=("Z-score" if normalize else "Last Price ($)")
-            )
-            st.plotly_chart(fig_single, use_container_width=True, key=f"single_chart_{selected_symbol}")
-
-        # =============================
-        # MULTI-DATE CURVE OVERLAY
-        # =============================
-        with col2:
             st.markdown("##### Multi-Date Overlay")
             valid_curves = {
                 d: s for d, s in {d: curve_for_date(work_df, contracts, d) for d in multi_dates}.items() if s is not None
@@ -239,56 +229,79 @@ with tab1:
                 )
                 st.plotly_chart(fig_overlay, use_container_width=True, key=f"multi_chart_{selected_symbol}")
 
-            # =============================
-            # DYNAMIC SPREAD CURVE FROM DEDICATED SHEET
-            # =============================
-
-            st.markdown("---")
-            st.markdown("##### Spread Curve Overlay (from Dedicated Sheet)")
-
-            # To make this dynamic, we map each product symbol to its corresponding spread sheet name.
-            # You can easily add more products here in the future.
+        # =============================
+        # COLUMN 2: SPREAD CURVE FROM DEDICATED SHEET
+        # =============================
+        with col2:
+            st.markdown("##### Spread Curve Overlay")
             SPREAD_SHEET_MAP = {
                 "CL": "Spread_CL",
                 "BZ": "Spread_Brent",
                 "DBI": "Spread_DBI",
                 "MRBN": "Spread_MRBN"
             }
-
-            # Get the correct sheet name for the currently selected product.
             target_spread_sheet = SPREAD_SHEET_MAP.get(selected_symbol)
 
-            # The logic will now run for any product that has a mapping above.
             if target_spread_sheet:
                 try:
-                    # Step 1: Load the dedicated spread data sheet using the dynamic sheet name.
                     df_spreads, spread_contracts = load_product_data(MASTER_EXCEL_FILE, target_spread_sheet)
-
-                    # Step 2: Get the curves for the dates selected in the sidebar. (This logic is unchanged)
                     valid_spread_curves = {}
                     for d in multi_dates:
                         s = curve_for_date(df_spreads, spread_contracts, d)
                         if s is not None:
                             valid_spread_curves[d] = s
 
-                    # Step 3: Plot the data if any was found. (This logic is unchanged)
                     if not valid_spread_curves:
-                        st.warning(f"No data found in the '{target_spread_sheet}' sheet for the selected overlay dates.")
+                        st.warning(f"No data in '{target_spread_sheet}' for selected dates.")
                     else:
                         fig_spread_overlay = overlay_figure(
                             spread_contracts,
                             valid_spread_curves,
                             y_label="Spread ($)",
-                            title=f"Spread Curve from '{target_spread_sheet}' Sheet"
+                            title="Spread Curve"
                         )
                         st.plotly_chart(fig_spread_overlay, use_container_width=True, key=f"spread_overlay_{selected_symbol}")
-
                 except Exception as e:
-                    # The error message is now dynamic to help with debugging.
-                    st.info(f"The '{target_spread_sheet}' sheet was not found or could not be loaded. This chart is unavailable.")
+                    st.info(f"Sheet '{target_spread_sheet}' not found or could not be loaded.")
             else:
-                # This message appears if the selected product doesn't have a spread sheet defined in our map.
-                st.info(f"Spread curve analysis is not configured for {selected_product_info['name']} ({selected_symbol}).")
+                st.info(f"Spread curve analysis not configured for {selected_product_info['name']}.")
+        
+        # =============================
+        # COLUMN 3: FLY CURVE FROM DEDICATED SHEET
+        # =============================
+        with col3:
+            st.markdown("##### Fly Curve Overlay")
+            FLY_SHEET_MAP = {
+                "CL": "FLY_CL",
+                "BZ": "FLY_Brent", # Using your provided casing
+                "DBI": "FLY_DBI",
+                "MRBN": "FLY_MRBN"
+            }
+            target_fly_sheet = FLY_SHEET_MAP.get(selected_symbol)
+
+            if target_fly_sheet:
+                try:
+                    df_fly, fly_contracts = load_product_data(MASTER_EXCEL_FILE, target_fly_sheet)
+                    valid_fly_curves = {}
+                    for d in multi_dates:
+                        s = curve_for_date(df_fly, fly_contracts, d)
+                        if s is not None:
+                            valid_fly_curves[d] = s
+
+                    if not valid_fly_curves:
+                        st.warning(f"No data in '{target_fly_sheet}' for selected dates.")
+                    else:
+                        fig_fly_overlay = overlay_figure(
+                            fly_contracts,
+                            valid_fly_curves,
+                            y_label="Fly Spread ($)",
+                            title="Fly Curve"
+                        )
+                        st.plotly_chart(fig_fly_overlay, use_container_width=True, key=f"fly_overlay_{selected_symbol}")
+                except Exception as e:
+                    st.info(f"Sheet '{target_fly_sheet}' not found or could not be loaded.")
+            else:
+                st.info(f"Fly curve analysis not configured for {selected_product_info['name']}.")
 
 with tab2:
     st.header("Spread & Fly Time Series Analysis")
@@ -441,3 +454,4 @@ with tab3:
 
 with st.expander("Preview Raw Data"):
     st.dataframe(df.head(25))
+

@@ -8,98 +8,34 @@ from datetime import date, timedelta
 
 # ---------------------------- Page config and CSS ----------------------------
 st.set_page_config(page_title="Futures Curve Viewer", layout="wide")
-
-# Add Google Font for a modern look
-st.markdown("""
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-""", unsafe_allow_html=True)
-
 st.markdown("""
 <style>
-/* --- Root Variables for Easy Customization --- */
-:root {
-    --primary-bg-color: #F0F2F6;       /* Light gray background for the main app */
-    --secondary-bg-color: #FFFFFF;     /* White for content cards and widgets */
-    --sidebar-bg-color: #F8F9FA;       /* Slightly off-white for the sidebar */
-    --primary-text-color: #212529;     /* Dark gray for main text */
-    --secondary-text-color: #495057;   /* Lighter gray for subtitles */
-    --accent-color: #0068C9;           /* A professional blue for interactive elements */
-    --border-color: #DEE2E6;
-    --border-radius: 8px;              /* Softer rounded corners */
-    --box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-    --font-family: 'Inter', sans-serif;
+/* Dropdown width */
+div[data-baseweb="select"] > div {
+    width: 200px !important;
+    font-size: 14px !important;
 }
-
-/* --- General App & Body Styling --- */
-body {
-    font-family: var(--font-family);
-    color: var(--primary-text-color);
-}
-
-.stApp {
-    background-color: var(--primary-bg-color);
-}
-
-h1, h5 {
-    font-weight: 600 !important;
-}
-
-/* --- Sidebar Styling --- */
-[data-testid="stSidebar"] {
-    background-color: var(--sidebar-bg-color);
-    border-right: 1px solid var(--border-color);
-    padding: 1.25rem;
-}
-
-/* --- Main Content Styling --- */
-.stTabs [data-baseweb="tab-list"] {
-    gap: 1.5rem; /* Space between tabs */
-}
-
-.stTabs [data-baseweb="tab"] {
-    padding: 0.75rem 1rem;
-    background-color: transparent;
-    border-radius: var(--border-radius);
-    transition: background-color 0.2s ease-in-out;
-}
-
-.stTabs [data-baseweb="tab"]:hover {
-    background-color: #E9ECEF;
-}
-
-.stTabs [aria-selected="true"] {
-    background-color: var(--secondary-bg-color);
-    box-shadow: var(--box-shadow);
-}
-
-/* --- Widget Styling --- */
-/* Style for dropdowns, multiselect, and date pickers */
-div[data-baseweb="select"] > div,
+/* Date picker width */
 div[data-baseweb="datepicker"] > div {
-    border-radius: var(--border-radius);
-    border: 1px solid var(--border-color);
-    background-color: var(--secondary-bg-color);
-    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
-    transition: all 0.2s ease-in-out;
+    width: 150px !important;
+    font-size: 14px !important;
 }
-
-div[data-baseweb="select"] > div:hover,
-div[data-baseweb="datepicker"] > div:hover {
-    border-color: var(--accent-color);
-    box-shadow: 0 0 0 3px rgba(0, 104, 201, 0.15);
+/* Buttons */
+div.stButton > button {
+    width: 100px;
+    height: 30px;
+    font-size: 13px;
 }
-
-/* --- Placeholder Text (Updated Style) --- */
+/* Custom styling for placeholder text */
 .placeholder-text {
-    font-size: 1.25rem;
-    font-weight: 500;
-    color: var(--secondary-text-color);
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #888;
     text-align: center;
-    margin-top: 4rem;
-    border: 2px dashed var(--border-color);
-    padding: 2.5rem;
-    border-radius: var(--border-radius);
-    background-color: var(--secondary-bg-color);
+    margin-top: 5rem;
+    border: 2px dashed #ddd;
+    padding: 2rem;
+    border-radius: 10px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -518,5 +454,3 @@ with tab3:
 
 with st.expander("Preview Raw Data"):
     st.dataframe(df.head(25))
-
-

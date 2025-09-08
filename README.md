@@ -1,2 +1,2 @@
 My Old Website
-https://curve-viewer-old.streamlit.app/
+https://curve-viewer-new.streamlit.app/

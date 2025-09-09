@@ -491,31 +491,61 @@ with tab3:
             data=[go.Scatter(x=contracts, y=anim_df.loc[0, contracts], mode="lines+markers")],
             layout=go.Layout(
                 title="Forward Curve Evolution",
-                xaxis_title="Contract", yaxis_title="Price ($)" if not normalize else "Z-score",
-                template="plotly_white", margin=dict(l=40, r=20, t=60, b=40),
+                xaxis_title="Contract",
+                yaxis_title="Price ($)" if not normalize else "Z-score",
+                template="plotly_white",
+                margin=dict(l=40, r=20, t=60, b=40),
+
+                # Animation buttons
                 updatemenus=[dict(
                     type="buttons", showactive=False, y=1.15, x=1.05, xanchor="right", yanchor="top",
                     buttons=[
-                        dict(label="Play", method="animate", args=[None, {"frame": {"duration": 50, "redraw": True}, "fromcurrent": True, "transition": {"duration": 0}}]),
-                        dict(label="Pause", method="animate", args=[[None], {"frame": {"duration": 0, "redraw": False}, "mode": "immediate"}])
+                        dict(
+                            label="Play",
+                            method="animate",
+                            args=[None, {
+                                "frame": {"duration": 200, "redraw": True},   # slower = smoother
+                                "fromcurrent": True,
+                                "transition": {"duration": 300, "easing": "cubic-in-out"}
+                            }]
+                        ),
+                        dict(
+                            label="Pause",
+                            method="animate",
+                            args=[[None], {
+                                "frame": {"duration": 0, "redraw": False},
+                                "mode": "immediate"
+                            }]
+                        )
                     ]
                 )],
+
+                # Slider
                 sliders=[dict(
-                    active=0, transition={"duration": 0}, currentvalue={"prefix": "Date: ", "font": {"size": 14}},
+                    active=0,
+                    transition={"duration": 300, "easing": "cubic-in-out"},
+                    currentvalue={"prefix": "Date: ", "font": {"size": 14}},
                     steps=[dict(
                         method="animate",
-                        args=[[str(d.date())], {"mode": "immediate", "frame": {"duration": 100, "redraw": True}, "transition": {"duration": 50}}],
+                        args=[[str(d.date())], {
+                            "mode": "immediate",
+                            "frame": {"duration": 200, "redraw": True},
+                            "transition": {"duration": 300, "easing": "cubic-in-out"}
+                        }],
                         label=str(d.date())
                     ) for d in anim_df["Date"]]
                 )]
             ),
+            # Frames with auto y-axis range
             frames=[go.Frame(
-                data=[go.Scatter(x=contracts, y=anim_df.loc[i, contracts])],
-                name=str( anim_df.loc[i, "Date"].date() )
+                data=[go.Scatter(x=contracts, y=anim_df.loc[i, contracts], mode="lines+markers")],
+                name=str(anim_df.loc[i, "Date"].date()),
+                layout=go.Layout(yaxis=dict(autorange=True))  # 👈 important: reset axis each frame
             ) for i in range(len(anim_df))]
         )
         st.plotly_chart(fig_anim, use_container_width=True, key=f"anim_chart_{selected_symbol}")
 
 with st.expander("Preview Raw Data"):
     st.dataframe(df.head(25))
+
 
